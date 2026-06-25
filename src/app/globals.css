@@ -127,4 +127,21 @@
   html {
     @apply font-sans;
   }
+
+  /* Scrollbar Customization */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: oklch(0.18 0.01 250);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.28 0.01 250);
+    border-radius: 9999px;
+    border: 2px solid oklch(0.18 0.01 250);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.38 0.01 250);
+  }
 }
