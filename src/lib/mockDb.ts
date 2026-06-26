@@ -69,6 +69,17 @@ const INITIAL_TRANSACTIONS: Transaction[] = [
 
 const isServer = typeof window === 'undefined';
 
+if (!isServer) {
+  const cachedUsers = localStorage.getItem('db_users');
+  if (cachedUsers && (cachedUsers.includes('darlet.achei@gmail.com') || cachedUsers.includes('darlet123'))) {
+    localStorage.removeItem('db_users');
+  }
+  const session = localStorage.getItem('auth_session');
+  if (session && session.includes('darlet.achei@gmail.com')) {
+    localStorage.removeItem('auth_session');
+  }
+}
+
 function getStorageItem<T>(key: string, defaultValue: T): T {
   if (isServer) return defaultValue;
   const item = localStorage.getItem(key);
