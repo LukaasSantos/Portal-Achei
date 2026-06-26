@@ -37,7 +37,8 @@ export interface Transaction {
 }
 
 const INITIAL_USERS = [
-  { id: '1', email: 'lucas.tas@live.com', name: 'Lucas Tas', password: 'lucas123', role: 'Administrador' }
+  { id: '1', email: 'lucas.tas@live.com', name: 'Lucas Tas', password: 'lucas123', role: 'Administrador' },
+  { id: '2', email: 'dalete.achei@hotmail.com', name: 'Dálete Achei', password: 'dalete123', role: 'Administrador' }
 ];
 
 const INITIAL_CLIENTS: Client[] = [
@@ -81,7 +82,17 @@ function setStorageItem<T>(key: string, value: T): void {
 }
 
 export const mockDb = {
-  getUsers: () => getStorageItem('db_users', INITIAL_USERS),
+  getUsers: () => {
+    const users = getStorageItem('db_users', INITIAL_USERS);
+    if (!users.some((u: any) => u.email === 'dalete.achei@hotmail.com')) {
+      setStorageItem('db_users', INITIAL_USERS);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_session');
+      }
+      return INITIAL_USERS;
+    }
+    return users;
+  },
   addUser: (user: any) => {
     const users = mockDb.getUsers();
     users.push(user);
