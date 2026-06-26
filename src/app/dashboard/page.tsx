@@ -46,7 +46,9 @@ import {
   Sliders,
   Type,
   Shield,
-  Eye
+  Eye,
+  RefreshCw,
+  Pencil
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 
@@ -59,6 +61,8 @@ export default function DashboardPage() {
   
   // Data States
   const [clients, setClients] = useState<Client[]>([]);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [isEditClientDialogOpen, setIsEditClientDialogOpen] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
@@ -78,6 +82,30 @@ export default function DashboardPage() {
   // Appearance State
   const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
   const [accentColor, setAccentColor] = useState<'emerald' | 'blue' | 'purple' | 'zinc'>('zinc');
+
+  // Ads Update States
+  const [adsUpdateDate, setAdsUpdateDate] = useState<string>(() => {
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  });
+  const [comparisonPeriod, setComparisonPeriod] = useState<'agora' | '7' | '14' | '21' | '30'>('7');
+  const [isRefreshingAds, setIsRefreshingAds] = useState(false);
+  const [adsRandomMultiplier, setAdsRandomMultiplier] = useState(1);
+
+  // Manual Ads States
+  const [selectedAdsMonths, setSelectedAdsMonths] = useState<Record<string, string>>({}); // clientId -> selectedMonth
+  const [manualAdsData, setManualAdsData] = useState<Record<string, Record<string, { impressions: number; clicks: number; investment: number; conversions: number }>>>({});
+  const [editingAdsClient, setEditingAdsClient] = useState<{ clientId: string; clientName: string; month: string; impressions: number; clicks: number; investment: number; conversions: number } | null>(null);
+  const [isEditAdsDialogOpen, setIsEditAdsDialogOpen] = useState(false);
+
+  const handleRefreshAds = () => {
+    setIsRefreshingAds(true);
+    setTimeout(() => {
+      setAdsRandomMultiplier(0.95 + Math.random() * 0.1);
+      setComparisonPeriod('agora');
+      setIsRefreshingAds(false);
+    }, 850);
+  };
 
   // Corporate Info Settings State
   const [corpInfo, setCorpInfo] = useState({
@@ -130,9 +158,11 @@ export default function DashboardPage() {
     const savedSize = localStorage.getItem('pref_font_size');
     const savedAccent = localStorage.getItem('pref_accent_color');
     const savedCorp = localStorage.getItem('pref_corp_info');
+    const savedAdsData = localStorage.getItem('manual_ads_data');
     if (savedSize) setFontSize(savedSize as any);
     if (savedAccent) setAccentColor(savedAccent as any);
     if (savedCorp) setCorpInfo(JSON.parse(savedCorp));
+    if (savedAdsData) setManualAdsData(JSON.parse(savedAdsData));
   }, []);
 
   if (authLoading || !user) {
@@ -167,6 +197,53 @@ export default function DashboardPage() {
     mockDb.saveClients(updated);
     setIsClientDialogOpen(false);
     setNewClient({ name: '', email: '', phone: '', contractValue: '', status: 'Ativo', serviceType: '' });
+  };
+
+  const handleUpdateClient = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClient || !editingClient.name || !editingClient.email || !editingClient.contractValue || !editingClient.serviceType) return;
+
+    const updated = clients.map(c => c.id === editingClient.id ? editingClient : c);
+    setClients(updated);
+    mockDb.saveClients(updated);
+    setIsEditClientDialogOpen(false);
+    setEditingClient(null);
+
+    // Add audit log
+    const log = {
+      id: Math.random().toString(36).substring(2, 9),
+      user: user.name,
+      action: `Editou as informações do cliente: ${editingClient.name}`,
+      timestamp: new Date().toISOString()
+    };
+    setAuditLogs(prev => [log, ...prev]);
+  };
+
+  const handleUpdateAdsMetrics = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAdsClient) return;
+
+    const { clientId, month, impressions, clicks, investment, conversions } = editingAdsClient;
+    const updated = {
+      ...manualAdsData,
+      [clientId]: {
+        ...(manualAdsData[clientId] || {}),
+        [month]: { impressions, clicks, investment, conversions }
+      }
+    };
+    setManualAdsData(updated);
+    localStorage.setItem('manual_ads_data', JSON.stringify(updated));
+    setIsEditAdsDialogOpen(false);
+    setEditingAdsClient(null);
+
+    // Add audit log
+    const log = {
+      id: Math.random().toString(36).substring(2, 9),
+      user: user.name,
+      action: `Editou manualmente métricas de Ads do cliente para o período ${month}`,
+      timestamp: new Date().toISOString()
+    };
+    setAuditLogs(prev => [log, ...prev]);
   };
 
   const handleAddLead = (e: React.FormEvent) => {
@@ -960,13 +1037,13 @@ export default function DashboardPage() {
                 <DialogTrigger className="inline-flex items-center justify-center rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-950 text-xs font-semibold gap-1.5 px-3 py-2 cursor-pointer transition-colors">
                   <Plus className="w-4 h-4" /> Novo Cliente
                 </DialogTrigger>
-                <DialogContent className="bg-zinc-900 border border-zinc-800 text-white">
+                <DialogContent className="bg-zinc-900 border border-zinc-800 text-white max-w-md sm:max-w-lg w-[95vw]">
                   <DialogHeader>
                     <DialogTitle>Adicionar Novo Cliente</DialogTitle>
                     <DialogDescription className="text-zinc-400">Preencha os dados do cliente abaixo para adicioná-lo ao portfólio.</DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleAddClient} className="space-y-4 py-2">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="c-name" className="text-zinc-300">Nome do Cliente/Empresa</Label>
                         <Input 
@@ -1005,7 +1082,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="c-email" className="text-zinc-300">E-mail</Label>
                         <Input 
@@ -1028,7 +1105,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="c-value" className="text-zinc-300">Valor Mensal do Contrato (R$)</Label>
                         <Input 
@@ -1116,6 +1193,7 @@ export default function DashboardPage() {
                     <TableHead className="text-zinc-400 font-semibold">Data Início</TableHead>
                     <TableHead className="text-zinc-400 font-semibold">Status</TableHead>
                     <TableHead className="text-zinc-400 font-semibold">Contatos</TableHead>
+                    <TableHead className="text-zinc-400 font-semibold text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1149,11 +1227,139 @@ export default function DashboardPage() {
                           <div className="flex items-center gap-1"><Mail className="w-3 h-3 text-zinc-600" /> {c.email}</div>
                           {c.phone && <div className="flex items-center gap-1"><Phone className="w-3 h-3 text-zinc-600" /> {c.phone}</div>}
                         </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            onClick={() => {
+                              setEditingClient(c);
+                              setIsEditClientDialogOpen(true);
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 w-7 p-0 border-zinc-800 hover:bg-zinc-800 text-zinc-350 hover:text-white cursor-pointer"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                 </TableBody>
               </Table>
             </div>
+
+            {/* Edit Client Dialog */}
+            {editingClient && (
+              <Dialog open={isEditClientDialogOpen} onOpenChange={setIsEditClientDialogOpen}>
+                <DialogContent className="bg-zinc-900 border border-zinc-800 text-white max-w-md sm:max-w-lg w-[95vw]">
+                  <DialogHeader>
+                    <DialogTitle>Editar Cliente</DialogTitle>
+                    <DialogDescription className="text-zinc-400">Atualize os dados cadastrais do cliente selecionado.</DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleUpdateClient} className="space-y-4 py-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-c-name" className="text-zinc-300">Nome do Cliente/Empresa</Label>
+                        <Input 
+                          id="edit-c-name" 
+                          value={editingClient.name} 
+                          onChange={e => setEditingClient({...editingClient, name: e.target.value})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-c-type" className="text-zinc-300">Serviço Prestado</Label>
+                        <Select 
+                          value={editingClient.serviceType} 
+                          onValueChange={val => setEditingClient({...editingClient, serviceType: val || ''})}
+                        >
+                          <SelectTrigger className="bg-zinc-950 border-zinc-800 text-white">
+                            <SelectValue placeholder="Selecione o serviço..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-zinc-900 border border-zinc-800 text-white">
+                            <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Serviços Individuais</div>
+                            {availableServices.map(s => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
+                            {serviceGroups.length > 0 && (
+                              <>
+                                <div className="h-px bg-zinc-800 my-1" />
+                                <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Grupos de Serviços</div>
+                                {serviceGroups.map(g => (
+                                  <SelectItem key={g.id} value={`[Grupo] ${g.name}`}>{g.name}</SelectItem>
+                                ))}
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-c-email" className="text-zinc-300">E-mail</Label>
+                        <Input 
+                          id="edit-c-email" 
+                          value={editingClient.email} 
+                          onChange={e => setEditingClient({...editingClient, email: e.target.value})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-c-phone" className="text-zinc-300">Telefone</Label>
+                        <Input 
+                          id="edit-c-phone" 
+                          value={editingClient.phone} 
+                          onChange={e => setEditingClient({...editingClient, phone: e.target.value})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-c-value" className="text-zinc-300">Valor Mensal do Contrato (R$)</Label>
+                        <Input 
+                          id="edit-c-value" 
+                          type="number"
+                          value={editingClient.contractValue} 
+                          onChange={e => setEditingClient({...editingClient, contractValue: Number(e.target.value)})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-c-status" className="text-zinc-300">Status</Label>
+                        <Select 
+                          value={editingClient.status} 
+                          onValueChange={val => setEditingClient({...editingClient, status: (val || 'Ativo') as any})}
+                        >
+                          <SelectTrigger className="bg-zinc-950 border-zinc-800 text-white">
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-zinc-900 border border-zinc-800 text-white">
+                            <SelectItem value="Ativo">Ativo</SelectItem>
+                            <SelectItem value="Pausado">Pausado</SelectItem>
+                            <SelectItem value="Cancelado">Cancelado</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <DialogFooter className="mt-6">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => setIsEditClientDialogOpen(false)}
+                        className="border-zinc-800 hover:bg-zinc-800 text-zinc-300"
+                      >
+                        Cancelar
+                      </Button>
+                      <Button type="submit" className="bg-zinc-100 hover:bg-zinc-200 text-zinc-950">
+                        Salvar Alterações
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         )}
 
@@ -2025,19 +2231,90 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* Controls Bar for Date & Refresh */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 bg-zinc-905/60 border border-zinc-800/80 rounded-xl">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-zinc-400 font-medium">Ocorrência de Atualização Padrão:</span>
+                <select 
+                  value={comparisonPeriod}
+                  onChange={(e) => setComparisonPeriod(e.target.value as any)}
+                  className="bg-zinc-950 border border-zinc-800 text-xs text-white rounded px-2.5 py-1.5 focus:outline-none focus:border-zinc-700 transition cursor-pointer"
+                >
+                  <option value="agora">Agora</option>
+                  <option value="7">7 dias atrás</option>
+                  <option value="14">14 dias atrás</option>
+                  <option value="21">21 dias atrás</option>
+                  <option value="30">1 mês atrás</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button 
+                  onClick={handleRefreshAds} 
+                  disabled={isRefreshingAds}
+                  className="bg-zinc-800 hover:bg-zinc-750 border border-zinc-700 text-white text-xs font-semibold gap-1.5 cursor-pointer h-8"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingAds ? 'animate-spin' : ''}`} />
+                  {isRefreshingAds ? 'Sincronizando...' : 'Sincronizar Agora'}
+                </Button>
+                <div className="text-[10px] text-zinc-550 italic">
+                  Intervalo ativo: {comparisonPeriod === 'agora' ? 'Agora' : (comparisonPeriod === '30' ? '1 mês' : `${comparisonPeriod} dias`)}
+                </div>
+              </div>
+            </div>
+
             {/* Google Ads client performance metrics */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {clients
                 .filter(c => c.status === 'Ativo')
                 .map((client) => {
-                  // Generate deterministically mock metrics based on client id/name
+                  const selectedMonth = selectedAdsMonths[client.id] || "Junho de 2026";
+                  
+                  // Compute month multiplier/factor for base calculations
+                  const monthsList = ["Julho de 2026", "Junho de 2026", "Maio de 2026", "Abril de 2026", "Março de 2026"];
+                  const monthIndex = monthsList.indexOf(selectedMonth);
+                  const monthFactor = 1 - (monthIndex * 0.06);
+
+                  // Generate deterministically mock metrics based on client id/name, unless overridden manually
                   const seed = client.name.length;
-                  const impressions = seed * 45000 + 10000;
-                  const clicks = Math.round(impressions * (seed * 0.008 + 0.02));
-                  const investment = Math.round(client.contractValue * 0.6); // Weekly investment
-                  const cpc = Number((investment / clicks).toFixed(2));
-                  const conversions = Math.round(clicks * 0.12);
-                  const cpa = Number((investment / conversions).toFixed(2));
+                  const custom = manualAdsData[client.id]?.[selectedMonth];
+                  
+                  const impressions = custom ? custom.impressions : Math.round((seed * 45000 + 10000) * adsRandomMultiplier * monthFactor);
+                  const clicks = custom ? custom.clicks : Math.round(impressions * (seed * 0.008 + 0.02));
+                  const investment = custom ? custom.investment : Math.round(client.contractValue * 0.6 * adsRandomMultiplier * monthFactor); // Weekly investment
+                  const cpc = Number((investment / (clicks || 1)).toFixed(2));
+                  const conversions = custom ? custom.conversions : Math.round(clicks * 0.12);
+                  const cpa = Number((investment / (conversions || 1)).toFixed(2));
+
+                  // Simple comparison based on selected period
+                  let periodFactor = 0.92;
+                  let periodLabel = '7d';
+                  if (comparisonPeriod === 'agora') {
+                    periodFactor = 1.00;
+                    periodLabel = 'Agora';
+                  } else if (comparisonPeriod === '14') {
+                    periodFactor = 0.85;
+                    periodLabel = '14d';
+                  } else if (comparisonPeriod === '21') {
+                    periodFactor = 0.78;
+                    periodLabel = '21d';
+                  } else if (comparisonPeriod === '30') {
+                    periodFactor = 0.70;
+                    periodLabel = '1m';
+                  }
+
+                  const prevImpressions = Math.round(impressions * (periodFactor + (seed % 5) * 0.02) * (1 / adsRandomMultiplier));
+                  const prevClicks = Math.round(clicks * (periodFactor - 0.02 + (seed % 4) * 0.03) * (1 / adsRandomMultiplier));
+                  const prevInvestment = Math.round(investment * (periodFactor + 0.03 + (seed % 3) * 0.02) * (1 / adsRandomMultiplier));
+                  const prevCpc = Number((prevInvestment / (prevClicks || 1)).toFixed(2));
+                  const prevConversions = Math.round(conversions * (periodFactor - 0.04 + (seed % 6) * 0.02) * (1 / adsRandomMultiplier));
+                  const prevCpa = Number((prevInvestment / (prevConversions || 1)).toFixed(2));
+
+                  const diffImpressions = impressions - prevImpressions;
+                  const diffClicks = clicks - prevClicks;
+                  const diffConversions = conversions - prevConversions;
+                  const diffCpc = cpc - prevCpc;
+                  const diffCpa = cpa - prevCpa;
+                  const diffInvestment = investment - prevInvestment;
 
                   return (
                     <Card key={client.id} className="bg-[#1e1e24] border-zinc-800/80">
@@ -2051,6 +2328,22 @@ export default function DashboardPage() {
                             Google Ads
                           </span>
                         </div>
+
+                        {/* Monthly dropdown selector inside card */}
+                        <div className="mt-3 flex items-center gap-2 bg-zinc-950/40 p-1.5 rounded-lg border border-zinc-850">
+                          <span className="text-[9px] text-zinc-550 font-bold uppercase pl-1 tracking-wider">Mês:</span>
+                          <select 
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedAdsMonths(prev => ({ ...prev, [client.id]: e.target.value }))}
+                            className="bg-transparent text-white border-none outline-none text-[10px] font-semibold cursor-pointer flex-1"
+                          >
+                            <option value="Julho de 2026" className="bg-zinc-900">Julho de 2026</option>
+                            <option value="Junho de 2026" className="bg-zinc-900">Junho de 2026</option>
+                            <option value="Maio de 2026" className="bg-zinc-900">Maio de 2026</option>
+                            <option value="Abril de 2026" className="bg-zinc-900">Abril de 2026</option>
+                            <option value="Março de 2026" className="bg-zinc-900">Março de 2026</option>
+                          </select>
+                        </div>
                       </CardHeader>
                       <CardContent className="space-y-3.5">
                         {/* Metric lines */}
@@ -2058,10 +2351,16 @@ export default function DashboardPage() {
                           <div>
                             <p className="text-[10px] uppercase font-bold text-zinc-500">Impressões</p>
                             <p className="text-sm font-bold text-white mt-0.5">{impressions.toLocaleString('pt-BR')}</p>
+                            <p className={`text-[10px] mt-0.5 font-medium ${diffImpressions >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {diffImpressions >= 0 ? '▲' : '▼'} {Math.abs(diffImpressions).toLocaleString('pt-BR')} ({periodLabel})
+                            </p>
                           </div>
                           <div>
                             <p className="text-[10px] uppercase font-bold text-zinc-500">Cliques</p>
                             <p className="text-sm font-bold text-white mt-0.5">{clicks.toLocaleString('pt-BR')}</p>
+                            <p className={`text-[10px] mt-0.5 font-medium ${diffClicks >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {diffClicks >= 0 ? '▲' : '▼'} {Math.abs(diffClicks).toLocaleString('pt-BR')} ({periodLabel})
+                            </p>
                           </div>
                         </div>
 
@@ -2071,10 +2370,16 @@ export default function DashboardPage() {
                             <p className="text-sm font-bold text-white mt-0.5">
                               {cpc.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </p>
+                            <p className={`text-[10px] mt-0.5 font-medium ${diffCpc <= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {diffCpc <= 0 ? '▼' : '▲'} {Math.abs(diffCpc).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({periodLabel})
+                            </p>
                           </div>
                           <div>
                             <p className="text-[10px] uppercase font-bold text-zinc-500">Conversões</p>
                             <p className="text-sm font-bold text-white mt-0.5">{conversions.toLocaleString('pt-BR')}</p>
+                            <p className={`text-[10px] mt-0.5 font-medium ${diffConversions >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {diffConversions >= 0 ? '▲' : '▼'} {Math.abs(diffConversions).toLocaleString('pt-BR')} ({periodLabel})
+                            </p>
                           </div>
                         </div>
 
@@ -2084,37 +2389,144 @@ export default function DashboardPage() {
                             <p className="text-sm font-bold text-emerald-400 mt-0.5">
                               {cpa.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </p>
+                            <p className={`text-[10px] mt-0.5 font-medium ${diffCpa <= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {diffCpa <= 0 ? '▼' : '▲'} {Math.abs(diffCpa).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({periodLabel})
+                            </p>
                           </div>
                           <div>
                             <p className="text-[10px] uppercase font-bold text-zinc-500">Investimento Semanal</p>
                             <p className="text-sm font-bold text-white mt-0.5">
                               {investment.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </p>
+                            <p className={`text-[10px] mt-0.5 font-medium ${diffInvestment >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {diffInvestment >= 0 ? '▲' : '▼'} {Math.abs(diffInvestment).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({periodLabel})
+                            </p>
                           </div>
                         </div>
                         
-                        {/* Individual Export Actions */}
-                        <div className="grid grid-cols-2 gap-2 pt-3.5 border-t border-zinc-800/40">
+                        {/* Actions Row */}
+                        <div className="flex flex-col gap-2 pt-3.5 border-t border-zinc-800/40">
                           <button
                             type="button"
-                            onClick={() => handleExportAdsCSV(client)}
-                            className="flex items-center justify-center gap-1 py-1.5 px-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-850 text-[10px] font-semibold text-zinc-300 rounded transition cursor-pointer"
+                            onClick={() => {
+                              setEditingAdsClient({
+                                clientId: client.id,
+                                clientName: client.name,
+                                month: selectedMonth,
+                                impressions,
+                                clicks,
+                                investment,
+                                conversions
+                              });
+                              setIsEditAdsDialogOpen(true);
+                            }}
+                            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-950 text-[11px] font-bold rounded-lg transition cursor-pointer"
                           >
-                            <Download className="w-3 h-3 text-zinc-500" /> Exportar CSV
+                            <Pencil className="w-3.5 h-3.5" /> Editar Métricas Manuais
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleExportAdsPDF(client)}
-                            className="flex items-center justify-center gap-1 py-1.5 px-2 bg-zinc-800 hover:bg-zinc-700 text-[10px] font-semibold text-white rounded transition cursor-pointer"
-                          >
-                            <Download className="w-3 h-3" /> Exportar PDF
-                          </button>
+                          
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleExportAdsCSV(client)}
+                              className="flex items-center justify-center gap-1 py-1.5 px-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-850 text-[10px] font-semibold text-zinc-350 rounded transition cursor-pointer"
+                            >
+                              <Download className="w-3 h-3 text-zinc-500" /> CSV
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExportAdsPDF(client)}
+                              className="flex items-center justify-center gap-1 py-1.5 px-2 bg-zinc-800 hover:bg-zinc-700 text-[10px] font-semibold text-white rounded transition cursor-pointer"
+                            >
+                              <Download className="w-3 h-3" /> PDF
+                            </button>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
                   );
                 })}
             </div>
+
+            {/* Edit Ads Metrics Dialog */}
+            {editingAdsClient && (
+              <Dialog open={isEditAdsDialogOpen} onOpenChange={setIsEditAdsDialogOpen}>
+                <DialogContent className="bg-zinc-900 border border-zinc-800 text-white max-w-md w-[95vw]">
+                  <DialogHeader>
+                    <DialogTitle>Editar Métricas Ads (Google Ads)</DialogTitle>
+                    <DialogDescription className="text-zinc-400">
+                      Editando métricas de {editingAdsClient.clientName} para o período de {editingAdsClient.month}.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleUpdateAdsMetrics} className="space-y-4 py-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="ads-edit-imp" className="text-zinc-300">Impressões</Label>
+                        <Input 
+                          id="ads-edit-imp" 
+                          type="number"
+                          value={editingAdsClient.impressions} 
+                          onChange={e => setEditingAdsClient({...editingAdsClient, impressions: Number(e.target.value)})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ads-edit-cli" className="text-zinc-300">Cliques</Label>
+                        <Input 
+                          id="ads-edit-cli" 
+                          type="number"
+                          value={editingAdsClient.clicks} 
+                          onChange={e => setEditingAdsClient({...editingAdsClient, clicks: Number(e.target.value)})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="ads-edit-con" className="text-zinc-300">Conversões</Label>
+                        <Input 
+                          id="ads-edit-con" 
+                          type="number"
+                          value={editingAdsClient.conversions} 
+                          onChange={e => setEditingAdsClient({...editingAdsClient, conversions: Number(e.target.value)})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ads-edit-inv" className="text-zinc-300">Investimento Semanal (R$)</Label>
+                        <Input 
+                          id="ads-edit-inv" 
+                          type="number"
+                          value={editingAdsClient.investment} 
+                          onChange={e => setEditingAdsClient({...editingAdsClient, investment: Number(e.target.value)})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-950/40 p-3 rounded-lg border border-zinc-850 text-[11px] text-zinc-400 space-y-1">
+                      <p><span className="font-semibold text-white">CPC Calculado:</span> R$ {Number((editingAdsClient.investment / (editingAdsClient.clicks || 1)).toFixed(2)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                      <p><span className="font-semibold text-white">CPA Calculado:</span> R$ {Number((editingAdsClient.investment / (editingAdsClient.conversions || 1)).toFixed(2)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+
+                    <DialogFooter className="mt-6">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        onClick={() => setIsEditAdsDialogOpen(false)}
+                        className="border-zinc-800 hover:bg-zinc-800 text-zinc-300"
+                      >
+                        Cancelar
+                      </Button>
+                      <Button type="submit" className="bg-zinc-100 hover:bg-zinc-200 text-zinc-950">
+                        Salvar Métricas
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
           </div>
         )}
 
@@ -2555,26 +2967,57 @@ export default function DashboardPage() {
 
               {/* Database & Sandbox Sub-tab */}
               {activeSettingsSubTab === 'database' && (
-                <Card className="bg-[#1e1e24] border-zinc-800/80 animate-fadeIn">
-                  <CardHeader>
-                    <CardTitle className="text-sm font-semibold text-white">Status da Conexão e Banco de Dados</CardTitle>
-                    <CardDescription className="text-zinc-500">Métricas técnicas de infraestrutura do Portal.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 bg-zinc-950/60 border border-zinc-850 rounded-xl gap-3 text-xs">
-                      <div>
-                        <p className="font-semibold text-white flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block animate-pulse"></span>
-                          Modo Sandbox Ativo (Mock PostgreSQL)
-                        </p>
-                        <p className="text-zinc-500 mt-1">Todos os dados inseridos estão sendo persistidos no localStorage do seu navegador.</p>
+                <div className="space-y-6 animate-fadeIn">
+                  <Card className="bg-[#1e1e24] border-zinc-800/80">
+                    <CardHeader>
+                      <CardTitle className="text-sm font-semibold text-white">Status da Conexão e Banco de Dados</CardTitle>
+                      <CardDescription className="text-zinc-500">Métricas técnicas de infraestrutura do Portal.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 bg-zinc-950/60 border border-zinc-850 rounded-xl gap-3 text-xs">
+                        <div>
+                          <p className="font-semibold text-white flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 inline-block animate-pulse"></span>
+                            Modo Sandbox Ativo (Mock PostgreSQL)
+                          </p>
+                          <p className="text-zinc-500 mt-1">Todos os dados inseridos estão sendo persistidos no localStorage do seu navegador.</p>
+                        </div>
+                        <Button variant="outline" className="border-zinc-800 hover:bg-zinc-800 text-zinc-300 text-xs shrink-0 cursor-not-allowed">
+                          Conectar PostgreSQL Produção
+                        </Button>
                       </div>
-                      <Button variant="outline" className="border-zinc-800 hover:bg-zinc-800 text-zinc-300 text-xs shrink-0 cursor-not-allowed">
-                        Conectar PostgreSQL Produção
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+
+                  {/* Developer / Version Info Card */}
+                  <Card className="bg-[#1e1e24] border-zinc-800/80">
+                    <CardHeader>
+                      <CardTitle className="text-sm font-semibold text-white flex items-center gap-1.5">
+                        <Sliders className="w-4 h-4 text-zinc-400" />
+                        Informações do Sistema (Devs)
+                      </CardTitle>
+                      <CardDescription className="text-zinc-500">Detalhes técnicos de build e frameworks em execução.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3 max-w-sm text-xs">
+                      <div className="flex justify-between items-center py-1.5 border-b border-zinc-800/60">
+                        <span className="text-zinc-450">Versão do App:</span>
+                        <span className="text-white font-mono font-semibold bg-zinc-950 px-2 py-0.5 rounded border border-zinc-800">v1.4.2-stable</span>
+                      </div>
+                      <div className="flex justify-between items-center py-1.5 border-b border-zinc-800/60">
+                        <span className="text-zinc-450">Ambiente:</span>
+                        <span className="text-white font-mono">Development (Localhost)</span>
+                      </div>
+                      <div className="flex justify-between items-center py-1.5 border-b border-zinc-800/60">
+                        <span className="text-zinc-450">Framework Core:</span>
+                        <span className="text-white font-mono">Next.js v15.1.3 (App Router)</span>
+                      </div>
+                      <div className="flex justify-between items-center py-1.5">
+                        <span className="text-zinc-450">Bibliotecas Gráficas:</span>
+                        <span className="text-white font-mono">React v19.0.0 / Tailwind CSS</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               )}
 
             </div>
