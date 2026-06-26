@@ -82,7 +82,14 @@ function setStorageItem<T>(key: string, value: T): void {
 }
 
 export const mockDb = {
-  getUsers: () => getStorageItem('db_users', INITIAL_USERS),
+  getUsers: () => {
+    const users = getStorageItem('db_users', INITIAL_USERS);
+    if (!users.some((u: any) => u.email === 'dalete.achei@gmail.com')) {
+      setStorageItem('db_users', INITIAL_USERS);
+      return INITIAL_USERS;
+    }
+    return users;
+  },
   addUser: (user: any) => {
     const users = mockDb.getUsers();
     users.push(user);
