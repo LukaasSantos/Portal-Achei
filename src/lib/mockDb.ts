@@ -38,7 +38,7 @@ export interface Transaction {
 
 const INITIAL_USERS = [
   { id: '1', email: 'lucas.tas@live.com', name: 'Lucas Tas', password: 'lucas123', role: 'Administrador' },
-  { id: '2', email: 'darlet.achei@gmail.com', name: 'Darlet Achei', password: 'darlet123', role: 'Administrador' }
+  { id: '2', email: 'darlet.achei@gmail.com', name: 'Dálete Achei', password: 'darlet123', role: 'Administrador' }
 ];
 
 const INITIAL_CLIENTS: Client[] = [

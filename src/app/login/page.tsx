@@ -221,12 +221,12 @@ export default function LoginPage() {
               <ArrowRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-300 group-hover:translate-x-0.5 transition shrink-0 ml-1" />
             </button>
             <button
-              onClick={() => handleFillDemo('darlet.achei@gmail.com', 'darlet123')}
+              onClick={() => handleFillDemo('dalete.achei@gmail.com', 'dalete123')}
               className="flex items-center justify-between p-2.5 bg-zinc-900/50 hover:bg-zinc-800/40 border border-zinc-800 rounded-lg text-left transition group text-xs"
             >
               <div className="overflow-hidden">
-                <p className="font-medium text-zinc-300 truncate">Darlet Achei (Admin)</p>
-                <p className="text-[10px] text-zinc-500 truncate">darlet.achei@gmail.com</p>
+                <p className="font-medium text-zinc-300 truncate">Dálete Achei (Admin)</p>
+                <p className="text-[10px] text-zinc-500 truncate">dalete.achei@gmail.com</p>
               </div>
               <ArrowRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-300 group-hover:translate-x-0.5 transition shrink-0 ml-1" />
             </button>
