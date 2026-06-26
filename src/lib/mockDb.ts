@@ -36,6 +36,36 @@ export interface Transaction {
   date: string;
 }
 
+export interface FormSubmission {
+  id: string;
+  clientId: string;
+  clientName: string;
+  month: string;
+  submittedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+  
+  // Validação dos Leads
+  leadContactDate: string;
+  leadName: string;
+  leadPhone: string;
+  leadCampaign: string;
+  leadSold: 'Sim' | 'Não' | 'Em Andamento';
+  leadWhyNotSold?: string;
+
+  // Atualização de dados
+  topGoogleCampaign: string;
+  topPositiveKeywords: string;
+  negativeKeywordsToUpdate: string;
+  salesTeamObservations?: string;
+}
+
+export interface ServiceGroup {
+  id: string;
+  name: string;
+  services: string[];
+}
+
+
 const INITIAL_USERS = [
   { id: '1', email: 'lucas.tas@live.com', name: 'Lucas Tas', password: 'lucas123', role: 'Administrador' },
   { id: '2', email: 'dalete.achei@hotmail.com', name: 'Dálete Achei', password: 'dalete123', role: 'Administrador' }
@@ -68,6 +98,19 @@ const INITIAL_TRANSACTIONS: Transaction[] = [
 ];
 
 const isServer = typeof window === 'undefined';
+
+const INITIAL_SERVICES = [
+  'Gestão de Tráfego',
+  'Redes Sociais & Branding',
+  'SEO Local',
+  'Desenvolvimento Web',
+  'Marketing de Conteúdo'
+];
+
+const INITIAL_SERVICE_GROUPS: ServiceGroup[] = [
+  { id: 'g1', name: 'Combo Ads & Social', services: ['Gestão de Tráfego', 'Redes Sociais & Branding'] },
+  { id: 'g2', name: 'Presença Digital Completa', services: ['SEO Local', 'Desenvolvimento Web', 'Redes Sociais & Branding'] }
+];
 
 function getStorageItem<T>(key: string, defaultValue: T): T {
   if (isServer) return defaultValue;
@@ -106,5 +149,14 @@ export const mockDb = {
   saveLeads: (leads: Lead[]) => setStorageItem('db_leads', leads),
   
   getTransactions: (): Transaction[] => getStorageItem('db_transactions', INITIAL_TRANSACTIONS),
-  saveTransactions: (transactions: Transaction[]) => setStorageItem('db_transactions', transactions)
+  saveTransactions: (transactions: Transaction[]) => setStorageItem('db_transactions', transactions),
+  
+  getSubmissions: (): FormSubmission[] => getStorageItem('db_submissions', []),
+  saveSubmissions: (submissions: FormSubmission[]) => setStorageItem('db_submissions', submissions),
+  
+  getServices: (): string[] => getStorageItem('db_services', INITIAL_SERVICES),
+  saveServices: (services: string[]) => setStorageItem('db_services', services),
+
+  getServiceGroups: (): ServiceGroup[] => getStorageItem('db_service_groups', INITIAL_SERVICE_GROUPS),
+  saveServiceGroups: (groups: ServiceGroup[]) => setStorageItem('db_service_groups', groups)
 };
