@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Calendar, CheckCircle2, ChevronDown, Search, Trash2, Send, X, ClipboardCheck, Database } from 'lucide-react';
+import { Calendar, CheckCircle2, ChevronDown, Search, Trash2, Send, X, ClipboardCheck, Database, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function EnviarRelatorioPage() {
   const [clients, setClients] = useState<Client[]>([]);
@@ -14,15 +14,76 @@ export default function EnviarRelatorioPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [month, setMonth] = useState('');
+  const [activeLeadIndex, setActiveLeadIndex] = useState(0);
+
+  interface FormLead {
+    id: string;
+    contactDate: string;
+    name: string;
+    phone: string;
+    campaign: string;
+    sold: 'Sim' | 'Não' | 'Em Andamento';
+    whyNotSold: string;
+  }
 
   // --- Form fields ---
-  // Validação dos Leads
-  const [leadContactDate, setLeadContactDate] = useState('');
-  const [leadName, setLeadName] = useState('');
-  const [leadPhone, setLeadPhone] = useState('');
-  const [leadCampaign, setLeadCampaign] = useState('');
-  const [leadSold, setLeadSold] = useState<'Sim' | 'Não' | 'Em Andamento'>('Em Andamento');
-  const [leadWhyNotSold, setLeadWhyNotSold] = useState('');
+  // Validação dos Leads (One or more leads)
+  const [leads, setLeads] = useState<FormLead[]>([
+    {
+      id: 'l_init_' + Math.random().toString(36).substring(2, 9),
+      contactDate: '',
+      name: '',
+      phone: '',
+      campaign: '',
+      sold: 'Em Andamento',
+      whyNotSold: ''
+    }
+  ]);
+
+  const handleAddLeadField = () => {
+    setLeads([
+      ...leads,
+      {
+        id: 'l_' + Math.random().toString(36).substring(2, 9),
+        contactDate: new Date().toISOString().split('T')[0],
+        name: '',
+        phone: '',
+        campaign: '',
+        sold: 'Em Andamento',
+        whyNotSold: ''
+      }
+    ]);
+    setActiveLeadIndex(leads.length);
+  };
+
+  const handleRemoveLeadField = (id: string) => {
+    if (leads.length > 1) {
+      const indexToRemove = leads.findIndex(l => l.id === id);
+      setLeads(leads.filter(l => l.id !== id));
+      setActiveLeadIndex(prev => {
+        if (prev >= leads.length - 1) {
+          return Math.max(0, leads.length - 2);
+        }
+        if (prev > indexToRemove) {
+          return prev - 1;
+        }
+        return prev;
+      });
+    }
+  };
+
+  const handleUpdateLeadField = (id: string, field: keyof FormLead, value: any) => {
+    setLeads(leads.map(l => {
+      if (l.id === id) {
+        return {
+          ...l,
+          [field]: value,
+          whyNotSold: field === 'sold' && value !== 'Não' ? '' : l.whyNotSold
+        };
+      }
+      return l;
+    }));
+  };
 
   // Atualização de dados
   const [topGoogleCampaign, setTopGoogleCampaign] = useState('');
@@ -58,8 +119,18 @@ export default function EnviarRelatorioPage() {
     ];
     setMonth(`${months[currentDate.getMonth()]} de ${currentDate.getFullYear()}`);
     
-    // Set default contact date as today
-    setLeadContactDate(currentDate.toISOString().split('T')[0]);
+    // Set default contact date as today for the first lead
+    setLeads([
+      {
+        id: 'l_init_' + Math.random().toString(36).substring(2, 9),
+        contactDate: currentDate.toISOString().split('T')[0],
+        name: '',
+        phone: '',
+        campaign: '',
+        sold: 'Em Andamento',
+        whyNotSold: ''
+      }
+    ]);
 
     return () => clearInterval(interval);
   }, []);
@@ -82,20 +153,24 @@ export default function EnviarRelatorioPage() {
   const handleClear = () => {
     setSelectedClient(null);
     setSearchQuery('');
-    setLeadName('');
-    setLeadPhone('');
-    setLeadCampaign('');
-    setLeadSold('Em Andamento');
-    setLeadWhyNotSold('');
+    setLeads([
+      {
+        id: 'l_clear_' + Math.random().toString(36).substring(2, 9),
+        contactDate: new Date().toISOString().split('T')[0],
+        name: '',
+        phone: '',
+        campaign: '',
+        sold: 'Em Andamento',
+        whyNotSold: ''
+      }
+    ]);
+    setActiveLeadIndex(0);
     setTopGoogleCampaign('');
     setTopPositiveKeywords('');
     setNegativeKeywordsToUpdate('');
     setSalesTeamObservations('');
     setError(null);
     setSuccess(false);
-
-    const currentDate = new Date();
-    setLeadContactDate(currentDate.toISOString().split('T')[0]);
   };
 
   const handleAutoFill = () => {
@@ -103,12 +178,27 @@ export default function EnviarRelatorioPage() {
       setSelectedClient(clients[0]);
     }
     const currentDate = new Date();
-    setLeadContactDate(currentDate.toISOString().split('T')[0]);
-    setLeadName('Gustavo Nogueira');
-    setLeadPhone('(11) 98765-4321');
-    setLeadCampaign('Campanha - Conversão WhatsApp Google Ads');
-    setLeadSold('Não');
-    setLeadWhyNotSold('Lead achou o preço de onboarding muito alto');
+    setActiveLeadIndex(0);
+    setLeads([
+      {
+        id: 'l_auto_1',
+        contactDate: currentDate.toISOString().split('T')[0],
+        name: 'Gustavo Nogueira',
+        phone: '(11) 98765-4321',
+        campaign: 'Campanha - Conversão WhatsApp Google Ads',
+        sold: 'Não',
+        whyNotSold: 'Lead achou o preço de onboarding muito alto'
+      },
+      {
+        id: 'l_auto_2',
+        contactDate: currentDate.toISOString().split('T')[0],
+        name: 'Ana Júlia Costa',
+        phone: '(11) 99988-7766',
+        campaign: 'Pesquisa - Institucional Dálete Achei',
+        sold: 'Sim',
+        whyNotSold: ''
+      }
+    ]);
     setTopGoogleCampaign('Pesquisa - Institucional Dálete Achei');
     setTopPositiveKeywords('melhor agencia de marketing local, gestora de redes sociais achei');
     setNegativeKeywordsToUpdate('gratis, emprego, estagio, gratuito');
@@ -127,9 +217,17 @@ export default function EnviarRelatorioPage() {
       return;
     }
 
-    if (!leadContactDate || !leadName || !leadPhone || !leadCampaign) {
-      setError('Por favor, preencha todos os campos obrigatórios da seção "Validação dos Leads".');
-      return;
+    // Validate all leads
+    for (let i = 0; i < leads.length; i++) {
+      const l = leads[i];
+      if (!l.contactDate || !l.name || !l.phone || !l.campaign) {
+        setError(`Por favor, preencha todos os campos obrigatórios no Lead #${i + 1}.`);
+        return;
+      }
+      if (l.sold === 'Não' && !l.whyNotSold) {
+        setError(`Por favor, forneça o motivo de não ter vendido para o Lead #${i + 1}.`);
+        return;
+      }
     }
 
     if (!topGoogleCampaign || !topPositiveKeywords || !negativeKeywordsToUpdate) {
@@ -137,6 +235,7 @@ export default function EnviarRelatorioPage() {
       return;
     }
 
+    const firstLead = leads[0];
     const newSubmission: FormSubmission = {
       id: 'sub_' + Math.random().toString(36).substring(2, 9),
       clientId: selectedClient.id,
@@ -145,12 +244,23 @@ export default function EnviarRelatorioPage() {
       submittedAt: new Date().toISOString(),
       status: 'pending',
       
-      leadContactDate,
-      leadName,
-      leadPhone,
-      leadCampaign,
-      leadSold,
-      leadWhyNotSold: leadSold === 'Não' ? leadWhyNotSold : '',
+      // Backward compatible fields (from first lead)
+      leadContactDate: firstLead.contactDate,
+      leadName: firstLead.name,
+      leadPhone: firstLead.phone,
+      leadCampaign: firstLead.campaign,
+      leadSold: firstLead.sold,
+      leadWhyNotSold: firstLead.whyNotSold,
+
+      // Multiple leads list
+      leads: leads.map(l => ({
+        contactDate: l.contactDate,
+        name: l.name,
+        phone: l.phone,
+        campaign: l.campaign,
+        sold: l.sold,
+        whyNotSold: l.whyNotSold
+      })),
 
       topGoogleCampaign,
       topPositiveKeywords,
@@ -164,11 +274,18 @@ export default function EnviarRelatorioPage() {
     setSuccess(true);
     
     // Clear dynamic fields while maintaining client selection
-    setLeadName('');
-    setLeadPhone('');
-    setLeadCampaign('');
-    setLeadSold('Em Andamento');
-    setLeadWhyNotSold('');
+    setLeads([
+      {
+        id: 'l_reset_' + Math.random().toString(36).substring(2, 9),
+        contactDate: new Date().toISOString().split('T')[0],
+        name: '',
+        phone: '',
+        campaign: '',
+        sold: 'Em Andamento',
+        whyNotSold: ''
+      }
+    ]);
+    setActiveLeadIndex(0);
     setTopGoogleCampaign('');
     setTopPositiveKeywords('');
     setNegativeKeywordsToUpdate('');
@@ -298,89 +415,143 @@ export default function EnviarRelatorioPage() {
 
               {/* SECTION 1: VALIDAÇÃO DOS LEADS */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-zinc-800/40">
-                  <ClipboardCheck className="w-5 h-5 text-yellow-500" />
-                  <h3 className="text-sm font-semibold text-white">1. Validação dos Leads</h3>
+                <div className="flex items-center justify-between pb-2 border-b border-zinc-800/40">
+                  <div className="flex items-center gap-2">
+                    <ClipboardCheck className="w-5 h-5 text-yellow-500" />
+                    <h3 className="text-sm font-semibold text-white">1. Validação dos Leads</h3>
+                    {leads.length > 1 && (
+                      <div className="flex items-center gap-1.5 ml-3 bg-zinc-900/80 border border-zinc-800/80 px-1 py-1 rounded-lg shadow-inner">
+                        <button
+                          type="button"
+                          onClick={() => setActiveLeadIndex(prev => Math.max(0, prev - 1))}
+                          disabled={activeLeadIndex === 0}
+                          className="p-1 rounded-md text-zinc-400 hover:text-yellow-400 hover:bg-zinc-800 disabled:opacity-20 disabled:hover:text-zinc-400 disabled:hover:bg-transparent transition-all cursor-pointer"
+                          title="Lead Anterior"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="text-[10px] font-bold text-zinc-300 min-w-[38px] text-center select-none tracking-wider bg-zinc-950/60 py-0.5 px-1.5 rounded border border-zinc-800/40">
+                          {activeLeadIndex + 1} / {leads.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setActiveLeadIndex(prev => Math.min(leads.length - 1, prev + 1))}
+                          disabled={activeLeadIndex === leads.length - 1}
+                          className="p-1 rounded-md text-zinc-400 hover:text-yellow-400 hover:bg-zinc-800 disabled:opacity-20 disabled:hover:text-zinc-400 disabled:hover:bg-transparent transition-all cursor-pointer"
+                          title="Próximo Lead"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddLeadField}
+                    className="border-zinc-800 hover:bg-zinc-800 text-zinc-300 text-[10px] flex items-center gap-1 h-7 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Adicionar Lead
+                  </Button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="leadContactDate" className="text-zinc-450">Data do contato <span className="text-red-500">*</span></Label>
-                    <Input
-                      id="leadContactDate"
-                      type="date"
-                      value={leadContactDate}
-                      onChange={(e) => setLeadContactDate(e.target.value)}
-                      className="bg-zinc-950/50 border-zinc-800 text-white"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="leadName" className="text-zinc-450">Nome do Lead <span className="text-red-500">*</span></Label>
-                    <Input
-                      id="leadName"
-                      value={leadName}
-                      onChange={(e) => setLeadName(e.target.value)}
-                      placeholder="Nome completo do lead"
-                      className="bg-zinc-950/50 border-zinc-800 text-white"
-                    />
-                  </div>
-                </div>
+                <div className="space-y-4">
+                  {leads.map((lead, index) => {
+                    if (index !== activeLeadIndex) return null;
+                    return (
+                      <div key={lead.id} className="p-4 bg-zinc-950/30 border border-zinc-800/50 rounded-xl space-y-4 relative animate-fadeIn">
+                      <div className="flex justify-between items-center pb-2 border-b border-zinc-850/60">
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Lead #{index + 1}</span>
+                        {leads.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLeadField(lead.id)}
+                            className="text-zinc-500 hover:text-red-400 transition cursor-pointer"
+                            title="Remover este lead"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="leadPhone" className="text-zinc-450">Telefone para contato <span className="text-red-500">*</span></Label>
-                    <Input
-                      id="leadPhone"
-                      value={leadPhone}
-                      onChange={(e) => setLeadPhone(e.target.value)}
-                      placeholder="Ex: (11) 98888-7777"
-                      className="bg-zinc-950/50 border-zinc-800 text-white"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="leadCampaign" className="text-zinc-450">Campanha originária <span className="text-red-500">*</span></Label>
-                    <Input
-                      id="leadCampaign"
-                      value={leadCampaign}
-                      onChange={(e) => setLeadCampaign(e.target.value)}
-                      placeholder="Ex: Black Friday - Meta Ads"
-                      className="bg-zinc-950/50 border-zinc-800 text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-zinc-450">Vendeu? <span className="text-red-500">*</span></Label>
-                    <div className="flex gap-4">
-                      {['Sim', 'Não', 'Em Andamento'].map((opt) => (
-                        <label key={opt} className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="leadSold"
-                            value={opt}
-                            checked={leadSold === opt}
-                            onChange={() => setLeadSold(opt as any)}
-                            className="accent-zinc-300"
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-zinc-450">Data do contato <span className="text-red-500">*</span></Label>
+                          <Input
+                            type="date"
+                            value={lead.contactDate}
+                            onChange={(e) => handleUpdateLeadField(lead.id, 'contactDate', e.target.value)}
+                            className="bg-zinc-950/50 border-zinc-800 text-white"
                           />
-                          {opt}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-zinc-450">Nome do Lead <span className="text-red-500">*</span></Label>
+                          <Input
+                            value={lead.name}
+                            onChange={(e) => handleUpdateLeadField(lead.id, 'name', e.target.value)}
+                            placeholder="Nome completo do lead"
+                            className="bg-zinc-950/50 border-zinc-800 text-white"
+                          />
+                        </div>
+                      </div>
 
-                  {leadSold === 'Não' && (
-                    <div className="space-y-2 animate-fadeIn">
-                      <Label htmlFor="leadWhyNotSold" className="text-zinc-450">Por que não vendeu? <span className="text-red-500">*</span></Label>
-                      <Input
-                        id="leadWhyNotSold"
-                        value={leadWhyNotSold}
-                        onChange={(e) => setLeadWhyNotSold(e.target.value)}
-                        placeholder="Ex: Achou o preço alto, fora do perfil de cliente ideal..."
-                        className="bg-zinc-950/50 border-zinc-800 text-white"
-                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-zinc-450">Telefone para contato <span className="text-red-500">*</span></Label>
+                          <Input
+                            value={lead.phone}
+                            onChange={(e) => handleUpdateLeadField(lead.id, 'phone', e.target.value)}
+                            placeholder="Ex: (11) 98888-7777"
+                            className="bg-zinc-950/50 border-zinc-800 text-white"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-zinc-450">Campanha originária <span className="text-red-500">*</span></Label>
+                          <Input
+                            value={lead.campaign}
+                            onChange={(e) => handleUpdateLeadField(lead.id, 'campaign', e.target.value)}
+                            placeholder="Ex: Black Friday - Meta Ads"
+                            className="bg-zinc-950/50 border-zinc-800 text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-zinc-450">Vendeu? <span className="text-red-500">*</span></Label>
+                          <div className="flex gap-4">
+                            {['Sim', 'Não', 'Em Andamento'].map((opt) => (
+                              <label key={opt} className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name={`leadSold-${lead.id}`}
+                                  value={opt}
+                                  checked={lead.sold === opt}
+                                  onChange={() => handleUpdateLeadField(lead.id, 'sold', opt as any)}
+                                  className="accent-zinc-300"
+                                />
+                                {opt}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        {lead.sold === 'Não' && (
+                          <div className="space-y-2 animate-fadeIn">
+                            <Label className="text-zinc-450">Por que não vendeu? <span className="text-red-500">*</span></Label>
+                            <Input
+                              value={lead.whyNotSold}
+                              onChange={(e) => handleUpdateLeadField(lead.id, 'whyNotSold', e.target.value)}
+                              placeholder="Ex: Achou o preço alto, fora do perfil de cliente ideal..."
+                              className="bg-zinc-950/50 border-zinc-800 text-white"
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  );
+                })}
                 </div>
               </div>
 

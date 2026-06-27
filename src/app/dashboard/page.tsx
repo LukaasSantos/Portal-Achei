@@ -499,6 +499,28 @@ export default function DashboardPage() {
         `   * Esta é a 1ª semana registrada de atualizações. As próximas semanas conterão análises comparativas automáticas de Google Ads.\n\n`;
     }
 
+    let leadsText = '';
+    if (submission.leads && submission.leads.length > 0) {
+      submission.leads.forEach((l, idx) => {
+        leadsText += `Lead #${idx + 1}:\n` +
+          `  - Data do Contato: ${l.contactDate ? new Date(l.contactDate).toLocaleDateString('pt-BR') : 'N/A'}\n` +
+          `  - Nome do Lead: ${l.name}\n` +
+          `  - Telefone para Contato: ${l.phone}\n` +
+          `  - Campanha: ${l.campaign}\n` +
+          `  - Vendeu? ${l.sold}\n` +
+          (l.sold === 'Não' ? `  - Motivo de não ter vendido: ${l.whyNotSold}\n` : '') +
+          `\n`;
+      });
+    } else {
+      leadsText = `Data do Contato: ${submission.leadContactDate ? new Date(submission.leadContactDate).toLocaleDateString('pt-BR') : 'N/A'}\n` +
+        `Nome do Lead: ${submission.leadName}\n` +
+        `Telefone para Contato: ${submission.leadPhone}\n` +
+        `Campanha: ${submission.leadCampaign}\n` +
+        `Vendeu? ${submission.leadSold}\n` +
+        (submission.leadSold === 'Não' ? `Motivo de não ter vendido: ${submission.leadWhyNotSold}\n` : '') +
+        `\n`;
+    }
+
     const content = `RELATÓRIO OPERACIONAL - PORTAL ACHEI\n` +
       `========================================\n` +
       `ID do Relatório: ${submission.id}\n` +
@@ -509,13 +531,7 @@ export default function DashboardPage() {
       `========================================\n\n` +
       `1. VALIDAÇÃO DOS LEADS\n` +
       `----------------------------------------\n` +
-      `Data do Contato: ${new Date(submission.leadContactDate).toLocaleDateString('pt-BR')}\n` +
-      `Nome do Lead: ${submission.leadName}\n` +
-      `Telefone para Contato: ${submission.leadPhone}\n` +
-      `Campanha: ${submission.leadCampaign}\n` +
-      `Vendeu? ${submission.leadSold}\n` +
-      (submission.leadSold === 'Não' ? `Motivo de não ter vendido: ${submission.leadWhyNotSold}\n` : '') +
-      `\n` +
+      leadsText +
       `2. ATUALIZAÇÃO DE DADOS\n` +
       `----------------------------------------\n` +
       `Campanha de maior performance (Google): ${submission.topGoogleCampaign}\n` +
@@ -573,19 +589,35 @@ export default function DashboardPage() {
         adsConsolidatedText = `   * Google Ads: 1ª Atualização (Baseline de Referência)\n`;
       }
 
+      let leadsText = '';
+      if (submission.leads && submission.leads.length > 0) {
+        submission.leads.forEach((l, idx) => {
+          leadsText += `   * Lead #${idx + 1}:\n` +
+            `     - Data do Contato: ${l.contactDate ? new Date(l.contactDate).toLocaleDateString('pt-BR') : 'N/A'}\n` +
+            `     - Nome do Lead: ${l.name}\n` +
+            `     - Telefone: ${l.phone}\n` +
+            `     - Campanha: ${l.campaign}\n` +
+            `     - Vendeu? ${l.sold}\n` +
+            (l.sold === 'Não' ? `     - Motivo: ${l.whyNotSold}\n` : '') +
+            `\n`;
+        });
+      } else {
+        leadsText = `   * Data do Contato: ${submission.leadContactDate ? new Date(submission.leadContactDate).toLocaleDateString('pt-BR') : 'N/A'}\n` +
+          `   * Nome do Lead: ${submission.leadName}\n` +
+          `   * Telefone para Contato: ${submission.leadPhone}\n` +
+          `   * Campanha: ${submission.leadCampaign}\n` +
+          `   * Vendeu? ${submission.leadSold}\n` +
+          (submission.leadSold === 'Não' ? `   * Motivo: ${submission.leadWhyNotSold}\n` : '') +
+          `\n`;
+      }
+
       content += `ATUALIZAÇÃO SEMANAL #${index + 1}\n` +
         `--------------------------------------------------\n` +
         `ID da Submissão: ${submission.id}\n` +
         `Data/Hora do Envio: ${new Date(submission.submittedAt).toLocaleString('pt-BR')}\n` +
         `--------------------------------------------------\n` +
         `1. VALIDAÇÃO DOS LEADS:\n` +
-        `   * Data do Contato: ${new Date(submission.leadContactDate).toLocaleDateString('pt-BR')}\n` +
-        `   * Nome do Lead: ${submission.leadName}\n` +
-        `   * Telefone para Contato: ${submission.leadPhone}\n` +
-        `   * Campanha: ${submission.leadCampaign}\n` +
-        `   * Vendeu? ${submission.leadSold}\n` +
-        (submission.leadSold === 'Não' ? `   * Motivo: ${submission.leadWhyNotSold}\n` : '') +
-        `\n` +
+        leadsText +
         `2. ATUALIZAÇÃO DE DADOS:\n` +
         `   * Campanha de Destaque (Google): ${submission.topGoogleCampaign}\n` +
         `   * Keywords Positivas: ${submission.topPositiveKeywords}\n` +
@@ -2040,18 +2072,42 @@ export default function DashboardPage() {
                                             
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                               <div className="space-y-1.5 bg-zinc-950/40 p-2.5 rounded-lg border border-zinc-850/60">
-                                                <p className="text-[9px] font-bold text-yellow-500 uppercase tracking-wider">1. Validação do Lead</p>
-                                                <div className="space-y-1 text-zinc-450 font-normal">
-                                                  <div><span className="text-zinc-500 font-semibold">Contato:</span> {new Date(sub.leadContactDate).toLocaleDateString('pt-BR')}</div>
-                                                  <div><span className="text-zinc-500 font-semibold">Lead:</span> {sub.leadName} ({sub.leadPhone})</div>
-                                                  <div><span className="text-zinc-500 font-semibold">Campanha:</span> {sub.leadCampaign}</div>
-                                                  <div>
-                                                    <span className="text-zinc-500 font-semibold">Vendeu?</span>{' '}
-                                                    <span className={sub.leadSold === 'Sim' ? 'text-emerald-400 font-semibold' : sub.leadSold === 'Não' ? 'text-red-400 font-semibold' : 'text-yellow-500 font-semibold'}>
-                                                      {sub.leadSold}
-                                                    </span>
-                                                    {sub.leadSold === 'Não' && ` (${sub.leadWhyNotSold})`}
-                                                  </div>
+                                                <p className="text-[9px] font-bold text-yellow-500 uppercase tracking-wider">
+                                                  {sub.leads && sub.leads.length > 1 ? `1. Validação dos Leads (${sub.leads.length})` : '1. Validação do Lead'}
+                                                </p>
+                                                <div className="space-y-3 mt-1.5">
+                                                  {sub.leads && sub.leads.length > 0 ? (
+                                                    sub.leads.map((l, leadIdx) => (
+                                                      <div key={leadIdx} className="space-y-1 text-zinc-450 font-normal border-b border-zinc-900/65 pb-2 last:border-0 last:pb-0">
+                                                        {sub.leads!.length > 1 && (
+                                                          <div className="text-[9px] font-bold text-zinc-500 uppercase mb-0.5">Lead #{leadIdx + 1}</div>
+                                                        )}
+                                                        <div><span className="text-zinc-500 font-semibold">Contato:</span> {l.contactDate ? new Date(l.contactDate).toLocaleDateString('pt-BR') : 'N/A'}</div>
+                                                        <div><span className="text-zinc-500 font-semibold">Lead:</span> {l.name} ({l.phone})</div>
+                                                        <div><span className="text-zinc-500 font-semibold">Campanha:</span> {l.campaign}</div>
+                                                        <div>
+                                                          <span className="text-zinc-500 font-semibold">Vendeu?</span>{' '}
+                                                          <span className={l.sold === 'Sim' ? 'text-emerald-400 font-semibold' : l.sold === 'Não' ? 'text-red-400 font-semibold' : 'text-yellow-500 font-semibold'}>
+                                                            {l.sold}
+                                                          </span>
+                                                          {l.sold === 'Não' && ` (${l.whyNotSold})`}
+                                                        </div>
+                                                      </div>
+                                                    ))
+                                                  ) : (
+                                                    <div className="space-y-1 text-zinc-450 font-normal">
+                                                      <div><span className="text-zinc-500 font-semibold">Contato:</span> {new Date(sub.leadContactDate).toLocaleDateString('pt-BR')}</div>
+                                                      <div><span className="text-zinc-500 font-semibold">Lead:</span> {sub.leadName} ({sub.leadPhone})</div>
+                                                      <div><span className="text-zinc-500 font-semibold">Campanha:</span> {sub.leadCampaign}</div>
+                                                      <div>
+                                                        <span className="text-zinc-500 font-semibold">Vendeu?</span>{' '}
+                                                        <span className={sub.leadSold === 'Sim' ? 'text-emerald-400 font-semibold' : sub.leadSold === 'Não' ? 'text-red-400 font-semibold' : 'text-yellow-500 font-semibold'}>
+                                                          {sub.leadSold}
+                                                        </span>
+                                                        {sub.leadSold === 'Não' && ` (${sub.leadWhyNotSold})`}
+                                                      </div>
+                                                    </div>
+                                                  )}
                                                 </div>
                                               </div>
 

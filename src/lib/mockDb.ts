@@ -36,6 +36,15 @@ export interface Transaction {
   date: string;
 }
 
+export interface SubmittedLead {
+  contactDate: string;
+  name: string;
+  phone: string;
+  campaign: string;
+  sold: 'Sim' | 'Não' | 'Em Andamento';
+  whyNotSold?: string;
+}
+
 export interface FormSubmission {
   id: string;
   clientId: string;
@@ -44,13 +53,16 @@ export interface FormSubmission {
   submittedAt: string;
   status: 'pending' | 'approved' | 'rejected';
   
-  // Validação dos Leads
+  // Validação dos Leads (First lead / Backward compatibility fallback)
   leadContactDate: string;
   leadName: string;
   leadPhone: string;
   leadCampaign: string;
   leadSold: 'Sim' | 'Não' | 'Em Andamento';
   leadWhyNotSold?: string;
+
+  // Support for multiple leads
+  leads?: SubmittedLead[];
 
   // Atualização de dados
   topGoogleCampaign: string;
