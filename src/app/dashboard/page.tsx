@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/authContext';
 import { useRouter } from 'next/navigation';
-import { mockDb, Client, Lead, Transaction, FormSubmission, ServiceGroup } from '@/lib/mockDb';
+import { mockDb, Client, Lead, Transaction, FormSubmission, ServiceGroup, Proposal, ProposalItem, Collaborator } from '@/lib/mockDb';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,7 +57,7 @@ export default function DashboardPage() {
   const router = useRouter();
   
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'overview' | 'clients' | 'comercial' | 'financeiro' | 'relatorios' | 'configuracoes' | 'ads'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'clients' | 'comercial' | 'financeiro' | 'relatorios' | 'configuracoes' | 'ads' | 'colaboradores'>('overview');
   
   // Data States
   const [clients, setClients] = useState<Client[]>([]);
@@ -126,6 +126,7 @@ export default function DashboardPage() {
   const [isClientDialogOpen, setIsClientDialogOpen] = useState(false);
   const [isLeadDialogOpen, setIsLeadDialogOpen] = useState(false);
   const [isTransactionDialogOpen, setIsTransactionDialogOpen] = useState(false);
+  const [isProposalDialogOpen, setIsProposalDialogOpen] = useState(false);
 
   // Form Fields
   // Client Form
@@ -134,6 +135,28 @@ export default function DashboardPage() {
   const [newLead, setNewLead] = useState({ name: '', company: '', email: '', value: '', status: 'new' as any, notes: '' });
   // Transaction Form
   const [newTransaction, setNewTransaction] = useState({ description: '', amount: '', type: 'receita' as any, category: '' });
+
+  // Proposal Form & States
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [financeiroSubTab, setFinanceiroSubTab] = useState<'fluxo' | 'propostas'>('fluxo');
+  const [newProposal, setNewProposal] = useState({
+    proposalNumber: '',
+    date: '',
+    validityDate: '',
+    clientName: '',
+    clientPhone: '',
+    clientEmail: '',
+    observations: 'Forma de pagamento: Boleto ou Pix\nDesconto: R$ 0,00\nObs.: Pagamento à vista ou faturado.'
+  });
+  const [proposalItems, setProposalItems] = useState<ProposalItem[]>([{ name: '', quantity: 1, price: 0 }]);
+  const [selectedEntityId, setSelectedEntityId] = useState<string>('');
+
+  // Collaborators & Proposal Editing States
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [isCollaboratorDialogOpen, setIsCollaboratorDialogOpen] = useState(false);
+  const [newCollaborator, setNewCollaborator] = useState({ name: '', role: 'dev', company: 'achei', email: '', phone: '' });
+  const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
+
 
   // Filters / Search
   const [clientSearch, setClientSearch] = useState('');
@@ -153,6 +176,8 @@ export default function DashboardPage() {
     setSubmissions(mockDb.getSubmissions());
     setAvailableServices(mockDb.getServices());
     setServiceGroups(mockDb.getServiceGroups());
+    setProposals(mockDb.getProposals());
+    setCollaborators(mockDb.getCollaborators());
     
     // Load local font/color options if any
     const savedSize = localStorage.getItem('pref_font_size');
@@ -287,6 +312,556 @@ export default function DashboardPage() {
     setIsTransactionDialogOpen(false);
     setNewTransaction({ description: '', amount: '', type: 'receita', category: '' });
   };
+
+  const handleSelectEntityForAutofill = (entityId: string | null) => {
+    if (!entityId || entityId === 'none') {
+      setSelectedEntityId('');
+      return;
+    }
+    setSelectedEntityId(entityId);
+
+    // Check if it is a client
+    const foundClient = clients.find(c => c.id === entityId);
+    if (foundClient) {
+      setNewProposal(prev => ({
+        ...prev,
+        clientName: foundClient.name,
+        clientPhone: foundClient.phone,
+        clientEmail: foundClient.email
+      }));
+      return;
+    }
+
+    // Check if it is a lead
+    const foundLead = leads.find(l => l.id === entityId);
+    if (foundLead) {
+      setNewProposal(prev => ({
+        ...prev,
+        clientName: foundLead.name,
+        clientPhone: '(00) 00000-0000',
+        clientEmail: foundLead.email
+      }));
+      return;
+    }
+  };
+
+  const handleAddProposal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProposal.clientName || !newProposal.proposalNumber || !newProposal.date || !newProposal.validityDate) {
+      alert('Por favor, preencha os campos obrigatórios: Nº do Orçamento, Cliente, Data e Validade.');
+      return;
+    }
+
+    const itemsToSave = proposalItems.filter(item => item.name.trim() !== '');
+    if (itemsToSave.length === 0) {
+      alert('Adicione pelo menos um item à proposta.');
+      return;
+    }
+
+    const subtotal = itemsToSave.reduce((acc, item) => acc + (item.quantity * item.price), 0);
+    // Extract discount or default to 0
+    const observationsDiscount = parseFloat((newProposal as any).discount || '0');
+    let discount = 0;
+    if (!isNaN(observationsDiscount)) {
+      discount = observationsDiscount;
+    }
+    const total = Math.max(0, subtotal - discount);
+
+    let updated: Proposal[];
+    if (editingProposal) {
+      // Editing Mode
+      const updatedProp: Proposal = {
+        ...editingProposal,
+        proposalNumber: newProposal.proposalNumber,
+        date: newProposal.date,
+        validityDate: newProposal.validityDate,
+        clientName: newProposal.clientName,
+        clientPhone: newProposal.clientPhone || '(00) 00000-0000',
+        clientEmail: newProposal.clientEmail || '',
+        items: itemsToSave,
+        subtotal,
+        discount,
+        total,
+        observations: newProposal.observations
+      };
+      updated = proposals.map(p => p.id === editingProposal.id ? updatedProp : p);
+    } else {
+      // Creation Mode
+      const proposalToAdd: Proposal = {
+        id: 'p_' + Math.random().toString(36).substring(2, 9),
+        proposalNumber: newProposal.proposalNumber,
+        date: newProposal.date,
+        validityDate: newProposal.validityDate,
+        clientName: newProposal.clientName,
+        clientPhone: newProposal.clientPhone || '(00) 00000-0000',
+        clientEmail: newProposal.clientEmail || '',
+        items: itemsToSave,
+        subtotal,
+        discount,
+        total,
+        observations: newProposal.observations,
+        createdAt: new Date().toISOString()
+      };
+      updated = [proposalToAdd, ...proposals];
+    }
+
+    setProposals(updated);
+    mockDb.saveProposals(updated);
+    setIsProposalDialogOpen(false);
+    
+    // Reset form
+    setNewProposal({
+      proposalNumber: '',
+      date: new Date().toISOString().split('T')[0],
+      validityDate: '',
+      clientName: '',
+      clientPhone: '',
+      clientEmail: '',
+      observations: 'Forma de pagamento: Boleto ou Pix\nDesconto: R$ 0,00\nObs.: Pagamento à vista ou faturado.',
+      discount: '0'
+    } as any);
+    setProposalItems([{ name: '', quantity: 1, price: 0 }]);
+    setSelectedEntityId('');
+    setEditingProposal(null);
+
+    // Add audit log
+    const log = {
+      id: Math.random().toString(36).substring(2, 9),
+      user: user.name,
+      action: editingProposal 
+        ? `Editou a proposta comercial Nº ${newProposal.proposalNumber} de: ${newProposal.clientName}`
+        : `Criou a proposta comercial Nº ${newProposal.proposalNumber} para: ${newProposal.clientName}`,
+      timestamp: new Date().toISOString()
+    };
+    setAuditLogs(prev => [log, ...prev]);
+  };
+
+  const handleEditProposalTrigger = (proposal: Proposal) => {
+    setEditingProposal(proposal);
+    setNewProposal({
+      proposalNumber: proposal.proposalNumber,
+      date: proposal.date,
+      validityDate: proposal.validityDate,
+      clientName: proposal.clientName,
+      clientPhone: proposal.clientPhone,
+      clientEmail: proposal.clientEmail,
+      observations: proposal.observations,
+      discount: proposal.discount.toString()
+    } as any);
+    setProposalItems(proposal.items);
+    setSelectedEntityId('');
+    setIsProposalDialogOpen(true);
+  };
+
+  const handleDeleteProposal = (id: string) => {
+    if (!confirm('Deseja realmente excluir esta proposta comercial?')) return;
+    const propToDelete = proposals.find(p => p.id === id);
+    const updated = proposals.filter(p => p.id !== id);
+    setProposals(updated);
+    mockDb.saveProposals(updated);
+
+    if (propToDelete) {
+      // Add audit log
+      const log = {
+        id: Math.random().toString(36).substring(2, 9),
+        user: user.name,
+        action: `Excluiu a proposta comercial Nº ${propToDelete.proposalNumber} (${propToDelete.clientName})`,
+        timestamp: new Date().toISOString()
+      };
+      setAuditLogs(prev => [log, ...prev]);
+    }
+  };
+
+  const handleAddCollaborator = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCollaborator.name || !newCollaborator.role || !newCollaborator.company) {
+      alert('Preencha os campos obrigatórios: Nome, Função e Empresa.');
+      return;
+    }
+    const collaboratorToAdd: Collaborator = {
+      id: 'col_' + Math.random().toString(36).substring(2, 9),
+      name: newCollaborator.name,
+      role: newCollaborator.role,
+      company: newCollaborator.company,
+      email: newCollaborator.email || undefined,
+      phone: newCollaborator.phone || undefined
+    };
+    const updated = [...collaborators, collaboratorToAdd];
+    setCollaborators(updated);
+    mockDb.saveCollaborators(updated);
+    setIsCollaboratorDialogOpen(false);
+    setNewCollaborator({ name: '', role: 'dev', company: 'achei', email: '', phone: '' });
+
+    // Add audit log
+    const log = {
+      id: Math.random().toString(36).substring(2, 9),
+      user: user.name,
+      action: `Cadastrou o colaborador: ${collaboratorToAdd.name} (${collaboratorToAdd.role.toUpperCase()} - ${collaboratorToAdd.company.toUpperCase()})`,
+      timestamp: new Date().toISOString()
+    };
+    setAuditLogs(prev => [log, ...prev]);
+  };
+
+  const handleDeleteCollaborator = (id: string) => {
+    if (!confirm('Deseja realmente remover este colaborador?')) return;
+    const colToDelete = collaborators.find(c => c.id === id);
+    const updated = collaborators.filter(c => c.id !== id);
+    setCollaborators(updated);
+    mockDb.saveCollaborators(updated);
+
+    if (colToDelete) {
+      const log = {
+        id: Math.random().toString(36).substring(2, 9),
+        user: user.name,
+        action: `Removeu o colaborador: ${colToDelete.name}`,
+        timestamp: new Date().toISOString()
+      };
+      setAuditLogs(prev => [log, ...prev]);
+    }
+  };
+
+  const handleExportProposalPDF = (proposal: Proposal) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const formatDateStr = (dateStr: string) => {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      if (parts.length !== 3) return dateStr;
+      const [year, month, day] = parts;
+      return `${day}/${month}/${year}`;
+    };
+
+    const formatCurrency = (val: number) => {
+      return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    };
+
+    let itemsHtml = '';
+    proposal.items.forEach((item, index) => {
+      let displayName = item.name;
+      if (item.collaboratorId) {
+        const col = collaborators.find(c => c.id === item.collaboratorId);
+        if (col) {
+          displayName += ` (${col.company.toUpperCase()} - ${col.name})`;
+        }
+      }
+      itemsHtml += `
+        <tr>
+          <td style="text-align: center; border-right: 1px solid #d1d5db; padding: 8px;">${index + 1}</td>
+          <td style="border-right: 1px solid #d1d5db; padding: 8px;">${displayName}</td>
+          <td style="text-align: center; border-right: 1px solid #d1d5db; padding: 8px;">${item.quantity}</td>
+          <td style="text-align: right; border-right: 1px solid #d1d5db; padding: 8px;">${formatCurrency(item.price)}</td>
+          <td style="text-align: right; padding: 8px;">${formatCurrency(item.quantity * item.price)}</td>
+        </tr>
+      `;
+    });
+
+    const obsHtml = proposal.observations
+      .split('\n')
+      .map(line => `<div>${line}</div>`)
+      .join('');
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Orçamento ${proposal.proposalNumber}</title>
+        <meta charset="utf-8">
+        <style>
+          body {
+            font-family: Arial, Helvetica, sans-serif;
+            color: #1f2937;
+            background-color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            font-size: 11px;
+            line-height: 1.4;
+          }
+          
+          /* Container styling matching the layout grid precisely */
+          .section {
+            border: 1px solid #d1d5db;
+            margin-bottom: 12px;
+          }
+          
+          .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            text-align: center;
+          }
+          .grid-3 > div {
+            padding: 10px;
+            font-weight: bold;
+          }
+          .grid-3 > div:not(:last-child) {
+            border-right: 1px solid #d1d5db;
+          }
+
+          /* Header style */
+          .header-container {
+            display: flex;
+            align-items: stretch;
+            border: 1px solid #d1d5db;
+            margin-bottom: 12px;
+          }
+          .logo-box {
+            background-color: #000000;
+            color: #ffffff;
+            width: 110px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 15px 10px;
+            font-family: sans-serif;
+            border-right: 1px solid #d1d5db;
+          }
+          .logo-box .brand {
+            font-size: 26px;
+            font-weight: 900;
+            letter-spacing: -1px;
+            line-height: 1;
+          }
+          .logo-box .sub {
+            font-size: 5px;
+            letter-spacing: 1px;
+            margin-top: 4px;
+            opacity: 0.8;
+            font-weight: bold;
+          }
+          .header-info {
+            flex: 1;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+          }
+          .header-left {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+          }
+          .header-left .company-name {
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 2px;
+          }
+          .header-right {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            text-align: right;
+          }
+          
+          /* Titles */
+          .section-title {
+            background-color: #f9fafb;
+            text-align: center;
+            font-weight: bold;
+            padding: 5px;
+            border-bottom: 1px solid #d1d5db;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 11px;
+          }
+
+          /* Client Data */
+          .client-grid {
+            display: grid;
+            grid-template-columns: 80px 1fr;
+          }
+          .client-cell-label {
+            padding: 8px;
+            font-weight: bold;
+            border-right: 1px solid #d1d5db;
+            background-color: #f9fafb;
+          }
+          .client-cell-value {
+            padding: 8px;
+          }
+          .client-border-bottom {
+            border-bottom: 1px solid #d1d5db;
+          }
+          .client-sub-grid {
+            display: grid;
+            grid-template-columns: 80px 1fr 60px 1fr;
+          }
+
+          /* Table Items */
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+          th {
+            background-color: #f9fafb;
+            font-weight: bold;
+            padding: 6px 8px;
+            border-bottom: 1px solid #d1d5db;
+            text-align: left;
+            font-size: 10px;
+          }
+          th:not(:last-child), td:not(:last-child) {
+            border-right: 1px solid #d1d5db;
+          }
+          
+          /* Footer grid totals */
+          .totals-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            border-top: 1px solid #d1d5db;
+            text-align: center;
+            background-color: #f9fafb;
+          }
+          .totals-grid > div {
+            padding: 8px;
+            font-weight: bold;
+            font-size: 11px;
+          }
+          .totals-grid > div:not(:last-child) {
+            border-right: 1px solid #d1d5db;
+          }
+
+          /* Observations */
+          .obs-content {
+            padding: 10px;
+            font-size: 10px;
+            white-space: pre-line;
+            color: #374151;
+          }
+
+          /* Signatures */
+          .signatures-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            column-gap: 40px;
+            margin-top: 60px;
+            padding: 0 10px;
+          }
+          .signature-box {
+            text-align: center;
+          }
+          .signature-line {
+            border-top: 1px solid #9ca3af;
+            margin-bottom: 4px;
+          }
+          .signature-title {
+            font-weight: bold;
+            color: #4b5563;
+          }
+
+          @media print {
+            body {
+              padding: 0;
+            }
+            .no-print {
+              display: none;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <!-- Header -->
+        <div class="header-container">
+          <div class="logo-box">
+            <div class="brand">Achei</div>
+            <div class="sub">DIGITAL MARKETING</div>
+          </div>
+          <div class="header-info">
+            <div class="header-left">
+              <div class="company-name">Achei Digital Marketing</div>
+              <div>CNPJ 49.042.375/0001-03</div>
+              <div>Rua Laranjal do Jari, 130 181 torre A</div>
+              <div style="font-size: 9px; color: #6b7280;">Ponto de referência: Atacadão - Centro Esportivo</div>
+            </div>
+            <div class="header-right">
+              <div style="font-weight: bold;">(11) 9187-0233</div>
+              <div>acheiglobalmetadigital@gmail.com</div>
+              <div>www.acheidigitalmarketing.com.br</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Budget Meta Info -->
+        <div class="section grid-3">
+          <div>Orçamento: ${proposal.proposalNumber}</div>
+          <div>Data: ${formatDateStr(proposal.date)}</div>
+          <div>Validade: ${formatDateStr(proposal.validityDate)}</div>
+        </div>
+
+        <!-- Client Info -->
+        <div class="section">
+          <div class="section-title">Dados do cliente</div>
+          <div class="client-grid client-border-bottom">
+            <div class="client-cell-label">Nome</div>
+            <div class="client-cell-value" style="font-weight: bold;">${proposal.clientName}</div>
+          </div>
+          <div class="client-sub-grid">
+            <div class="client-cell-label">Telefone</div>
+            <div class="client-cell-value" style="border-right: 1px solid #d1d5db;">${proposal.clientPhone}</div>
+            <div class="client-cell-label">E-mail</div>
+            <div class="client-cell-value">${proposal.clientEmail}</div>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <div class="section">
+          <div class="section-title" style="border-bottom: 1px solid #d1d5db;">Itens</div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px; text-align: center;">#</th>
+                <th>Nome</th>
+                <th style="width: 50px; text-align: center;">Qtd.</th>
+                <th style="width: 100px; text-align: right;">Valor</th>
+                <th style="width: 100px; text-align: right;">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          
+          <!-- Totals Row -->
+          <div class="totals-grid">
+            <div>Subtotal: ${formatCurrency(proposal.subtotal)}</div>
+            <div>Desconto: ${formatCurrency(proposal.discount)}</div>
+            <div style="color: #111827;">Total: ${formatCurrency(proposal.total)}</div>
+          </div>
+        </div>
+
+        <!-- Observations -->
+        <div class="section">
+          <div class="section-title">Observações</div>
+          <div class="obs-content">
+            ${obsHtml}
+          </div>
+        </div>
+
+        <!-- Signatures -->
+        <div class="signatures-container">
+          <div class="signature-box">
+            <div class="signature-line"></div>
+            <div class="signature-title">Achei Digital Marketing</div>
+          </div>
+          <div class="signature-box">
+            <div class="signature-line"></div>
+            <div class="signature-title">${proposal.clientName}</div>
+          </div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
+          }
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
 
   const handleUpdateLeadStatus = (leadId: string, newStatus: Lead['status']) => {
     const updated = leads.map(l => l.id === leadId ? { ...l, status: newStatus, updatedAt: new Date().toISOString().split('T')[0] } : l);
@@ -848,6 +1423,17 @@ export default function DashboardPage() {
             >
               <DollarSign className="w-4 h-4" />
               Financeiro
+            </button>
+            <button
+              onClick={() => setActiveTab('colaboradores')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition ${
+                activeTab === 'colaboradores' 
+                  ? 'bg-zinc-800 text-white font-semibold' 
+                  : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'
+              }`}
+            >
+              <Briefcase className="w-4 h-4" />
+              Colaboradores
             </button>
             <button
               onClick={() => setActiveTab('relatorios')}
@@ -1674,85 +2260,719 @@ export default function DashboardPage() {
         {/* --- 4. FINANCIAL MODULE --- */}
         {activeTab === 'financeiro' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight text-white">Controle Financeiro</h2>
-                <p className="text-sm text-zinc-400">Gerenciamento do caixa operacional de agência (Recomendações e Despesas).</p>
+                <h2 className="text-2xl font-bold tracking-tight text-white">Módulo Financeiro</h2>
+                <p className="text-sm text-zinc-400">Gerenciamento do caixa operacional e propostas comerciais da agência.</p>
               </div>
 
-              {/* Add Transaction Dialog */}
-              <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
+              <div className="flex border border-zinc-800 rounded-lg p-0.5 bg-zinc-950">
+                <button
+                  onClick={() => setFinanceiroSubTab('fluxo')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+                    financeiroSubTab === 'fluxo'
+                      ? 'bg-zinc-800 text-white font-bold'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Fluxo de Caixa
+                </button>
+                <button
+                  onClick={() => setFinanceiroSubTab('propostas')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition cursor-pointer ${
+                    financeiroSubTab === 'propostas'
+                      ? 'bg-zinc-800 text-white font-bold'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Propostas Comerciais
+                </button>
+              </div>
+            </div>
+
+            {/* --- SUB-TAB: FLUXO DE CAIXA --- */}
+            {financeiroSubTab === 'fluxo' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Livro Caixa</h3>
+                    <p className="text-xs text-zinc-500">Lançamentos de receitas e despesas.</p>
+                  </div>
+
+                  {/* Add Transaction Dialog */}
+                  <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
+                    <DialogTrigger className="inline-flex items-center justify-center rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-950 text-xs font-semibold gap-1.5 px-3 py-2 cursor-pointer transition-colors">
+                      <Plus className="w-4 h-4" /> Nova Transação
+                    </DialogTrigger>
+                    <DialogContent className="bg-zinc-900 border border-zinc-800 text-white">
+                      <DialogHeader>
+                        <DialogTitle>Registrar Transação Financeira</DialogTitle>
+                        <DialogDescription className="text-zinc-400">Registre um lançamento de receita ou despesa no livro-caixa.</DialogDescription>
+                      </DialogHeader>
+                      <form onSubmit={handleAddTransaction} className="space-y-4 py-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="tx-desc" className="text-zinc-300">Descrição</Label>
+                          <Input 
+                            id="tx-desc" 
+                            placeholder="Ex: Mensalidade Cliente X, Compra de Software"
+                            value={newTransaction.description} 
+                            onChange={e => setNewTransaction({...newTransaction, description: e.target.value})} 
+                            className="bg-zinc-950 border-zinc-800 text-white" 
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="tx-type" className="text-zinc-300">Tipo</Label>
+                            <Select 
+                              value={newTransaction.type} 
+                              onValueChange={val => setNewTransaction({...newTransaction, type: (val || 'receita') as any})}
+                            >
+                              <SelectTrigger className="bg-zinc-950 border-zinc-800 text-white">
+                                <SelectValue placeholder="Selecione" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-zinc-900 border border-zinc-800 text-white">
+                                <SelectItem value="receita">Receita (Entrada)</SelectItem>
+                                <SelectItem value="despesa">Despesa (Saída)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="tx-val" className="text-zinc-300">Valor (R$)</Label>
+                            <Input 
+                              id="tx-val" 
+                              type="number"
+                              placeholder="Ex: 1500"
+                              value={newTransaction.amount} 
+                              onChange={e => setNewTransaction({...newTransaction, amount: e.target.value})} 
+                              className="bg-zinc-950 border-zinc-800 text-white" 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="tx-cat" className="text-zinc-300">Categoria</Label>
+                          <Input 
+                            id="tx-cat" 
+                            placeholder="Ex: Infraestrutura, Salários, Tráfego Pago, Serviços"
+                            value={newTransaction.category} 
+                            onChange={e => setNewTransaction({...newTransaction, category: e.target.value})} 
+                            className="bg-zinc-950 border-zinc-800 text-white" 
+                          />
+                        </div>
+
+                        <DialogFooter className="mt-6">
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            onClick={() => setIsTransactionDialogOpen(false)}
+                            className="border-zinc-800 hover:bg-zinc-800 text-zinc-300"
+                          >
+                            Cancelar
+                          </Button>
+                          <Button type="submit" className="bg-zinc-100 hover:bg-zinc-200 text-zinc-950">
+                            Confirmar Lançamento
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                {/* Financial Stat Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card className="bg-[#1e1e24] border-zinc-800/80">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                      <CardTitle className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Total Receitas</CardTitle>
+                      <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-white">
+                        {totalReceitas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-[#1e1e24] border-zinc-800/80">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                      <CardTitle className="text-xs font-semibold uppercase tracking-wider text-red-400">Total Despesas</CardTitle>
+                      <TrendingDown className="w-4 h-4 text-red-400" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-white">
+                        {totalDespesas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-[#1e1e24] border-zinc-800/80">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                      <CardTitle className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Lucro Líquido</CardTitle>
+                      <CheckCircle className="w-4 h-4 text-zinc-300" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-white">
+                        {saldoLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Bookkeeping Table */}
+                <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/40">
+                  <Table>
+                    <TableHeader className="bg-zinc-900/50">
+                      <TableRow className="border-b border-zinc-800">
+                        <TableHead className="text-zinc-400 font-semibold">Descrição</TableHead>
+                        <TableHead className="text-zinc-400 font-semibold">Tipo</TableHead>
+                        <TableHead className="text-zinc-400 font-semibold">Categoria</TableHead>
+                        <TableHead className="text-zinc-400 font-semibold">Data</TableHead>
+                        <TableHead className="text-zinc-400 font-semibold text-right">Valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {transactions.map((t) => (
+                        <TableRow key={t.id} className="border-b border-zinc-800/60 hover:bg-zinc-900/20">
+                          <TableCell className="font-medium text-white">{t.description}</TableCell>
+                          <TableCell>
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
+                              t.type === 'receita' ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'
+                            }`}>
+                              {t.type === 'receita' ? 'Entrada' : 'Saída'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-zinc-400 text-xs">{t.category}</TableCell>
+                          <TableCell className="text-zinc-400 text-xs">{new Date(t.date).toLocaleDateString('pt-BR')}</TableCell>
+                          <TableCell className={`text-right font-semibold ${t.type === 'receita' ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {t.type === 'receita' ? '+' : '-'} {t.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {/* --- SUB-TAB: PROPOSTAS COMERCIAIS --- */}
+            {financeiroSubTab === 'propostas' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Orçamentos e Propostas</h3>
+                    <p className="text-xs text-zinc-500">Crie propostas comerciais premium com base no modelo corporativo.</p>
+                  </div>
+
+                  {/* Add Proposal Dialog */}
+                  <Dialog open={isProposalDialogOpen} onOpenChange={(open) => {
+                    setIsProposalDialogOpen(open);
+                    if (open) {
+                      // Generate proposal number and preset dates
+                      const autoNum = Date.now().toString().substring(4, 12);
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      const valDate = new Date();
+                      valDate.setDate(valDate.getDate() + 3);
+                      const valDateStr = valDate.toISOString().split('T')[0];
+                      
+                      setNewProposal({
+                        proposalNumber: autoNum,
+                        date: todayStr,
+                        validityDate: valDateStr,
+                        clientName: '',
+                        clientPhone: '',
+                        clientEmail: '',
+                        observations: 'Forma de pagamento: Boleto ou Pix\nDesconto: R$ 0,00 - Fechando em conjunto\nObs.: Pagamento no primeiro mês.\n\nProjeção para 3 meses\nManutenção Site e criação de Blog R$600,00 mês\nTráfego Pago Google + Meta R$3500,00 mês (Negociável)',
+                        discount: '0'
+                      } as any);
+                      setProposalItems([{ name: '', quantity: 1, price: 0 }]);
+                      setSelectedEntityId('');
+                    }
+                  }}>
+                    <DialogTrigger className="inline-flex items-center justify-center rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-950 text-xs font-semibold gap-1.5 px-3 py-2 cursor-pointer transition-colors">
+                      <Plus className="w-4 h-4" /> Nova Proposta
+                    </DialogTrigger>
+                    <DialogContent className="bg-zinc-900 border border-zinc-800 text-white sm:max-w-[60vw] w-full overflow-y-auto max-h-[85vh]">
+                      <DialogHeader>
+                        <DialogTitle>Nova Proposta Comercial / Orçamento</DialogTitle>
+                        <DialogDescription className="text-zinc-400">Preencha os dados abaixo. Você pode preencher de forma rápida a partir de um cliente ou lead existente.</DialogDescription>
+                      </DialogHeader>
+                      <form onSubmit={handleAddProposal} className="space-y-4 py-2">
+                        
+                        {/* Quick Autofill */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 rounded-lg bg-zinc-950 border border-zinc-850">
+                          <Label htmlFor="autofill-select" className="text-xs text-zinc-400 font-semibold shrink-0">Preenchimento Rápido (Cliente ou Lead)</Label>
+                          <div className="flex-grow">
+                            <Select value={selectedEntityId} onValueChange={handleSelectEntityForAutofill}>
+                              <SelectTrigger id="autofill-select" className="bg-zinc-900 border-zinc-800 text-white text-xs h-9 w-full">
+                                <SelectValue placeholder="Selecione um cliente/lead para preencher os dados..." />
+                              </SelectTrigger>
+                            <SelectContent className="bg-zinc-900 border border-zinc-800 text-white">
+                              <SelectItem value="none">-- Nenhum (Preencher Manualmente) --</SelectItem>
+                              
+                              <div className="px-2 py-1.5 text-[10px] font-bold text-zinc-500 uppercase">Clientes Ativos</div>
+                              {clients.map(c => (
+                                <SelectItem key={c.id} value={c.id}>{c.name} (Cliente)</SelectItem>
+                              ))}
+
+                              <div className="px-2 py-1.5 text-[10px] font-bold text-zinc-500 uppercase mt-2">Leads CRM</div>
+                              {leads.map(l => (
+                                <SelectItem key={l.id} value={l.id}>{l.name} - {l.company} (Lead)</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                        {/* Proposal metadata */}
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="prop-num" className="text-zinc-300 text-xs">Nº do Orçamento *</Label>
+                            <Input 
+                              id="prop-num" 
+                              value={newProposal.proposalNumber}
+                              onChange={e => setNewProposal({...newProposal, proposalNumber: e.target.value})}
+                              className="bg-zinc-950 border-zinc-800 text-white text-xs h-9" 
+                              required
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="prop-date" className="text-zinc-300 text-xs">Data da Proposta *</Label>
+                            <Input 
+                              id="prop-date" 
+                              type="date"
+                              value={newProposal.date}
+                              onChange={e => setNewProposal({...newProposal, date: e.target.value})}
+                              className="bg-zinc-950 border-zinc-800 text-white text-xs h-9" 
+                              required
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="prop-val" className="text-zinc-300 text-xs">Validade *</Label>
+                            <Input 
+                              id="prop-val" 
+                              type="date"
+                              value={newProposal.validityDate}
+                              onChange={e => setNewProposal({...newProposal, validityDate: e.target.value})}
+                              className="bg-zinc-950 border-zinc-800 text-white text-xs h-9" 
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        {/* Client details */}
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="prop-client" className="text-zinc-300 text-xs">Nome do Cliente *</Label>
+                            <Input 
+                              id="prop-client" 
+                              placeholder="Ex: Priscila Queiroz"
+                              value={newProposal.clientName}
+                              onChange={e => setNewProposal({...newProposal, clientName: e.target.value})}
+                              className="bg-zinc-950 border-zinc-800 text-white text-xs h-9" 
+                              required
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="prop-phone" className="text-zinc-300 text-xs">Telefone do Cliente</Label>
+                            <Input 
+                              id="prop-phone" 
+                              placeholder="Ex: (11) 99999-9999"
+                              value={newProposal.clientPhone}
+                              onChange={e => setNewProposal({...newProposal, clientPhone: e.target.value})}
+                              className="bg-zinc-950 border-zinc-800 text-white text-xs h-9" 
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="prop-email" className="text-zinc-300 text-xs">E-mail do Cliente</Label>
+                            <Input 
+                              id="prop-email" 
+                              type="email"
+                              placeholder="Ex: cliente@email.com"
+                              value={newProposal.clientEmail}
+                              onChange={e => setNewProposal({...newProposal, clientEmail: e.target.value})}
+                              className="bg-zinc-950 border-zinc-800 text-white text-xs h-9" 
+                            />
+                          </div>
+                        </div>
+
+                        {/* Items Section */}
+                        <div className="space-y-2 pt-2 border-t border-zinc-800">
+                          <div className="flex justify-between items-center">
+                            <Label className="text-zinc-300 font-semibold text-xs">Itens / Serviços da Proposta *</Label>
+                            <Button 
+                              type="button" 
+                              onClick={() => setProposalItems([...proposalItems, { name: '', quantity: 1, price: 0 }])}
+                              variant="outline" 
+                              size="sm"
+                              className="h-7 text-[10px] border-zinc-800 hover:bg-zinc-800 text-zinc-300 cursor-pointer"
+                            >
+                              + Adicionar Item
+                            </Button>
+                          </div>
+
+                          <div className="space-y-2">
+                            {proposalItems.map((item, idx) => (
+                              <div key={idx} className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
+                                <span className="text-[10px] text-zinc-500 font-mono w-4 text-center shrink-0">{idx + 1}</span>
+                                
+                                {/* Service Preset Select */}
+                                <Select 
+                                  value={availableServices.includes(item.name) ? item.name : 'custom'} 
+                                  onValueChange={val => {
+                                    if (val && val !== 'custom') {
+                                      const updated = [...proposalItems];
+                                      updated[idx].name = val;
+                                      setProposalItems(updated);
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="bg-zinc-950 border-zinc-800 text-white text-xs h-9 w-36 shrink-0">
+                                    <SelectValue placeholder="Serviço..." />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-zinc-900 border border-zinc-800 text-white">
+                                    <SelectItem value="custom">Outro (Manual)</SelectItem>
+                                    {availableServices.map(svc => (
+                                      <SelectItem key={svc} value={svc}>{svc}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+
+                                {/* Service Description Input (Manual / Edited) */}
+                                <Input 
+                                  placeholder="Descrição do serviço..."
+                                  value={item.name}
+                                  onChange={e => {
+                                    const updated = [...proposalItems];
+                                    updated[idx].name = e.target.value;
+                                    setProposalItems(updated);
+                                  }}
+                                  className="bg-zinc-950 border-zinc-800 text-white text-xs h-9 flex-1 min-w-[120px]" 
+                                  required
+                                />
+
+                                {/* Collaborator Selection Dropdown */}
+                                <Select 
+                                  value={item.collaboratorId || 'none'} 
+                                  onValueChange={val => {
+                                    const updated = [...proposalItems];
+                                    updated[idx].collaboratorId = (val === 'none' || !val) ? undefined : val;
+                                    setProposalItems(updated);
+                                  }}
+                                >
+                                  <SelectTrigger className="bg-zinc-950 border-zinc-800 text-white text-xs h-9 w-36 shrink-0">
+                                    <SelectValue placeholder="Colaborador" />
+                                  </SelectTrigger>
+                                  <SelectContent className="bg-zinc-900 border border-zinc-800 text-white">
+                                    <SelectItem value="none">Sem Colaborador</SelectItem>
+                                    {collaborators.map(col => (
+                                      <SelectItem key={col.id} value={col.id}>
+                                        {col.name} ({col.company.toUpperCase()})
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+
+                                <Input 
+                                  type="number"
+                                  placeholder="Qtd."
+                                  value={item.quantity}
+                                  onChange={e => {
+                                    const updated = [...proposalItems];
+                                    updated[idx].quantity = Math.max(1, parseInt(e.target.value) || 1);
+                                    setProposalItems(updated);
+                                  }}
+                                  className="bg-zinc-950 border-zinc-800 text-white text-xs h-9 w-14 text-center shrink-0" 
+                                  min="1"
+                                  required
+                                />
+                                <Input 
+                                  type="number"
+                                  placeholder="Preço (R$)"
+                                  value={item.price || ''}
+                                  onChange={e => {
+                                    const updated = [...proposalItems];
+                                    updated[idx].price = Math.max(0, parseFloat(e.target.value) || 0);
+                                    setProposalItems(updated);
+                                  }}
+                                  className="bg-zinc-950 border-zinc-800 text-white text-xs h-9 w-24 text-right shrink-0" 
+                                  min="0"
+                                  step="0.01"
+                                  required
+                                />
+                                {proposalItems.length > 1 && (
+                                  <Button 
+                                    type="button" 
+                                    onClick={() => setProposalItems(proposalItems.filter((_, i) => i !== idx))}
+                                    variant="outline" 
+                                    size="sm"
+                                    className="h-9 w-9 p-0 border-red-955 text-red-400 hover:bg-red-955/20 cursor-pointer"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Totals Calculation */}
+                        <div className="grid grid-cols-3 gap-4 pt-2 border-t border-zinc-800">
+                          <div className="space-y-1">
+                            <span className="text-[10px] text-zinc-400">Subtotal:</span>
+                            <div className="text-sm font-semibold text-white">
+                              {proposalItems.reduce((acc, item) => acc + (item.quantity * item.price), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="prop-discount" className="text-zinc-300 text-xs">Desconto (R$)</Label>
+                            <Input 
+                              id="prop-discount" 
+                              type="number"
+                              placeholder="0.00"
+                              value={(newProposal as any).discount || ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setNewProposal({...newProposal, discount: val} as any);
+                                // Automatically update the Discount text inside observations if it's there
+                                const descNum = parseFloat(val) || 0;
+                                const descStr = descNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                                setNewProposal(prev => {
+                                  let obs = prev.observations;
+                                  if (obs.includes('Desconto: R$')) {
+                                    obs = obs.replace(/Desconto:\s*R?\s*[0-9.,]+/i, `Desconto: R$ ${descStr}`);
+                                  } else {
+                                    obs = obs.replace(/Desconto:[^\n]*/i, `Desconto: R$ ${descStr}`);
+                                  }
+                                  return { ...prev, observations: obs, discount: val } as any;
+                                });
+                              }}
+                              className="bg-zinc-950 border-zinc-800 text-white text-xs h-9 text-right" 
+                            />
+                          </div>
+                          <div className="space-y-1 text-right">
+                            <span className="text-[10px] text-zinc-400">Total Final:</span>
+                            <div className="text-base font-bold text-emerald-400">
+                              {Math.max(0, proposalItems.reduce((acc, item) => acc + (item.quantity * item.price), 0) - (parseFloat((newProposal as any).discount) || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Observations / Terms */}
+                        <div className="space-y-2">
+                          <Label htmlFor="prop-obs" className="text-zinc-300 text-xs font-semibold">Observações / Termos *</Label>
+                          <textarea
+                            id="prop-obs" 
+                            value={newProposal.observations}
+                            onChange={e => setNewProposal({...newProposal, observations: e.target.value})}
+                            className="bg-zinc-950 border border-zinc-800 text-white text-xs p-2.5 rounded-md w-full h-32 font-sans focus:outline-none focus:ring-1 focus:ring-zinc-700"
+                            placeholder="Condições de pagamento, prazos de entrega e validade..."
+                            required
+                          />
+                        </div>
+
+                        <DialogFooter className="mt-6">
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            onClick={() => setIsProposalDialogOpen(false)}
+                            className="border-zinc-800 hover:bg-zinc-800 text-zinc-300 text-xs"
+                          >
+                            Cancelar
+                          </Button>
+                          <Button type="submit" className="bg-zinc-100 hover:bg-zinc-200 text-zinc-950 text-xs font-semibold">
+                            Salvar Proposta
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                {/* Proposals table */}
+                {proposals.length === 0 ? (
+                  <Card className="bg-[#1e1e24]/40 border-zinc-800/80 p-12 text-center flex flex-col items-center justify-center gap-3">
+                    <FileText className="w-10 h-10 text-zinc-700" />
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-450">Nenhuma proposta criada ainda</p>
+                      <p className="text-[10px] text-zinc-500 mt-1">Crie sua primeira proposta clicando no botão "Nova Proposta".</p>
+                    </div>
+                  </Card>
+                ) : (
+                  <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/40">
+                    <Table>
+                      <TableHeader className="bg-zinc-900/50">
+                        <TableRow className="border-b border-zinc-800">
+                          <TableHead className="text-zinc-400 font-semibold text-xs">Orçamento</TableHead>
+                          <TableHead className="text-zinc-400 font-semibold text-xs">Cliente</TableHead>
+                          <TableHead className="text-zinc-400 font-semibold text-xs">Data</TableHead>
+                          <TableHead className="text-zinc-400 font-semibold text-xs">Validade</TableHead>
+                          <TableHead className="text-zinc-400 font-semibold text-right text-xs">Total</TableHead>
+                          <TableHead className="text-zinc-400 font-semibold text-center text-xs w-28">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {proposals.map((prop) => (
+                          <TableRow key={prop.id} className="border-b border-zinc-800/60 hover:bg-zinc-900/20">
+                            <TableCell className="font-semibold text-white text-xs">#{prop.proposalNumber}</TableCell>
+                            <TableCell className="font-medium text-white text-xs">
+                              <div>{prop.clientName}</div>
+                              <div className="text-[10px] text-zinc-500">{prop.clientEmail || prop.clientPhone}</div>
+                            </TableCell>
+                            <TableCell className="text-zinc-400 text-xs">
+                              {prop.date.split('-').reverse().join('/')}
+                            </TableCell>
+                            <TableCell className="text-zinc-400 text-xs">
+                              {prop.validityDate.split('-').reverse().join('/')}
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-emerald-400 text-xs">
+                              {prop.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Button
+                                  onClick={() => handleExportProposalPDF(prop)}
+                                  title="Exportar PDF / Imprimir"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 border-zinc-800 hover:bg-zinc-800 text-zinc-300 cursor-pointer"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  onClick={() => handleEditProposalTrigger(prop)}
+                                  title="Editar Orçamento"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 border-zinc-800 hover:bg-zinc-800 text-zinc-300 cursor-pointer"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  onClick={() => handleDeleteProposal(prop.id)}
+                                  title="Excluir Proposta"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-8 p-0 border-red-950 text-red-400 hover:bg-red-950/20 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- COLABORADORES MODULE --- */}
+        {activeTab === 'colaboradores' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-white">Equipe & Colaboradores</h2>
+                <p className="text-sm text-zinc-400">Gerenciamento dos profissionais parceiros e internos da agência.</p>
+              </div>
+
+              {/* Add Collaborator Dialog */}
+              <Dialog open={isCollaboratorDialogOpen} onOpenChange={setIsCollaboratorDialogOpen}>
                 <DialogTrigger className="inline-flex items-center justify-center rounded-md bg-zinc-100 hover:bg-zinc-200 text-zinc-950 text-xs font-semibold gap-1.5 px-3 py-2 cursor-pointer transition-colors">
-                  <Plus className="w-4 h-4" /> Nova Transação
+                  <Plus className="w-4 h-4" /> Novo Colaborador
                 </DialogTrigger>
                 <DialogContent className="bg-zinc-900 border border-zinc-800 text-white">
                   <DialogHeader>
-                    <DialogTitle>Registrar Transação Financeira</DialogTitle>
-                    <DialogDescription className="text-zinc-400">Registre um lançamento de receita ou despesa no livro-caixa.</DialogDescription>
+                    <DialogTitle>Cadastrar Novo Colaborador</DialogTitle>
+                    <DialogDescription className="text-zinc-400">Insira as informações do novo integrante ou agência parceira.</DialogDescription>
                   </DialogHeader>
-                  <form onSubmit={handleAddTransaction} className="space-y-4 py-2">
+                  <form onSubmit={handleAddCollaborator} className="space-y-4 py-2">
                     <div className="space-y-2">
-                      <Label htmlFor="tx-desc" className="text-zinc-300">Descrição</Label>
+                      <Label htmlFor="col-name" className="text-zinc-300">Nome Completo *</Label>
                       <Input 
-                        id="tx-desc" 
-                        placeholder="Ex: Mensalidade Cliente X, Compra de Software"
-                        value={newTransaction.description} 
-                        onChange={e => setNewTransaction({...newTransaction, description: e.target.value})} 
+                        id="col-name" 
+                        placeholder="Ex: Lucas Santos"
+                        value={newCollaborator.name} 
+                        onChange={e => setNewCollaborator({...newCollaborator, name: e.target.value})} 
                         className="bg-zinc-950 border-zinc-800 text-white" 
+                        required
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="tx-type" className="text-zinc-300">Tipo</Label>
+                        <Label htmlFor="col-role" className="text-zinc-300">Função *</Label>
                         <Select 
-                          value={newTransaction.type} 
-                          onValueChange={val => setNewTransaction({...newTransaction, type: (val || 'receita') as any})}
+                          value={newCollaborator.role} 
+                          onValueChange={val => setNewCollaborator({...newCollaborator, role: val || 'dev'})}
                         >
                           <SelectTrigger className="bg-zinc-950 border-zinc-800 text-white">
                             <SelectValue placeholder="Selecione" />
                           </SelectTrigger>
                           <SelectContent className="bg-zinc-900 border border-zinc-800 text-white">
-                            <SelectItem value="receita">Receita (Entrada)</SelectItem>
-                            <SelectItem value="despesa">Despesa (Saída)</SelectItem>
+                            <SelectItem value="dev">Desenvolvedor (dev)</SelectItem>
+                            <SelectItem value="mkt">Marketing (mkt)</SelectItem>
+                            <SelectItem value="design">Designer (design)</SelectItem>
+                            <SelectItem value="social">Social Media (social)</SelectItem>
+                            <SelectItem value="atendimento">Atendimento (atendimento)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="tx-val" className="text-zinc-300">Valor (R$)</Label>
-                        <Input 
-                          id="tx-val" 
-                          type="number"
-                          placeholder="Ex: 1500"
-                          value={newTransaction.amount} 
-                          onChange={e => setNewTransaction({...newTransaction, amount: e.target.value})} 
-                          className="bg-zinc-950 border-zinc-800 text-white" 
-                        />
+                        <Label htmlFor="col-company" className="text-zinc-300">Empresa *</Label>
+                        <Select 
+                          value={newCollaborator.company} 
+                          onValueChange={val => setNewCollaborator({...newCollaborator, company: val || 'achei'})}
+                        >
+                          <SelectTrigger className="bg-zinc-950 border-zinc-800 text-white">
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-zinc-900 border border-zinc-800 text-white">
+                            <SelectItem value="achei">Dálete Achei (achei)</SelectItem>
+                            <SelectItem value="mid">MID (mid)</SelectItem>
+                            <SelectItem value="brit">BRIT (brit)</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="tx-cat" className="text-zinc-300">Categoria</Label>
-                      <Input 
-                        id="tx-cat" 
-                        placeholder="Ex: Infraestrutura, Salários, Tráfego Pago, Serviços"
-                        value={newTransaction.category} 
-                        onChange={e => setNewTransaction({...newTransaction, category: e.target.value})} 
-                        className="bg-zinc-950 border-zinc-800 text-white" 
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="col-email" className="text-zinc-300">E-mail</Label>
+                        <Input 
+                          id="col-email" 
+                          type="email"
+                          placeholder="Ex: lucas@achei.com"
+                          value={newCollaborator.email} 
+                          onChange={e => setNewCollaborator({...newCollaborator, email: e.target.value})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="col-phone" className="text-zinc-300">Telefone</Label>
+                        <Input 
+                          id="col-phone" 
+                          placeholder="Ex: (11) 99999-8888"
+                          value={newCollaborator.phone} 
+                          onChange={e => setNewCollaborator({...newCollaborator, phone: e.target.value})} 
+                          className="bg-zinc-950 border-zinc-800 text-white" 
+                        />
+                      </div>
                     </div>
 
                     <DialogFooter className="mt-6">
                       <Button 
                         type="button" 
                         variant="outline" 
-                        onClick={() => setIsTransactionDialogOpen(false)}
+                        onClick={() => setIsCollaboratorDialogOpen(false)}
                         className="border-zinc-800 hover:bg-zinc-800 text-zinc-300"
                       >
                         Cancelar
                       </Button>
                       <Button type="submit" className="bg-zinc-100 hover:bg-zinc-200 text-zinc-950">
-                        Confirmar Lançamento
+                        Confirmar Cadastro
                       </Button>
                     </DialogFooter>
                   </form>
@@ -1760,77 +2980,44 @@ export default function DashboardPage() {
               </Dialog>
             </div>
 
-            {/* Financial Stat Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="bg-[#1e1e24] border-zinc-800/80">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Total Receitas</CardTitle>
-                  <TrendingUp className="w-4 h-4 text-emerald-400" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">
-                    {totalReceitas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </div>
-                </CardContent>
-              </Card>
+            {/* Collaborators List Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {collaborators.map((col) => (
+                <Card key={col.id} className="bg-[#1e1e24] border-zinc-800/80 hover:border-zinc-700/60 transition flex flex-col justify-between">
+                  <CardHeader className="pb-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-base font-bold text-white">{col.name}</CardTitle>
+                        <CardDescription className="text-xs text-zinc-500 mt-0.5">Empresa: <span className="font-semibold text-zinc-300 uppercase">{col.company}</span></CardDescription>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        col.role === 'dev' ? 'bg-blue-950 text-blue-400' :
+                        col.role === 'mkt' ? 'bg-purple-950 text-purple-400' :
+                        col.role === 'design' ? 'bg-emerald-950 text-emerald-400' : 'bg-zinc-800 text-zinc-300'
+                      }`}>
+                        {col.role}
+                      </span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="text-xs space-y-1 text-zinc-400">
+                      {col.email && <div><span className="text-zinc-500 font-semibold">Email:</span> {col.email}</div>}
+                      {col.phone && <div><span className="text-zinc-500 font-semibold">Tel:</span> {col.phone}</div>}
+                    </div>
 
-              <Card className="bg-[#1e1e24] border-zinc-800/80">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-red-400">Total Despesas</CardTitle>
-                  <TrendingDown className="w-4 h-4 text-red-400" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">
-                    {totalDespesas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-[#1e1e24] border-zinc-800/80">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <CardTitle className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Lucro Líquido</CardTitle>
-                  <CheckCircle className="w-4 h-4 text-zinc-300" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">
-                    {saldoLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Bookkeeping Table */}
-            <div className="border border-zinc-800 rounded-xl overflow-hidden bg-zinc-900/40">
-              <Table>
-                <TableHeader className="bg-zinc-900/50">
-                  <TableRow className="border-b border-zinc-800">
-                    <TableHead className="text-zinc-400 font-semibold">Descrição</TableHead>
-                    <TableHead className="text-zinc-400 font-semibold">Tipo</TableHead>
-                    <TableHead className="text-zinc-400 font-semibold">Categoria</TableHead>
-                    <TableHead className="text-zinc-400 font-semibold">Data</TableHead>
-                    <TableHead className="text-zinc-400 font-semibold text-right">Valor</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactions.map((t) => (
-                    <TableRow key={t.id} className="border-b border-zinc-800/60 hover:bg-zinc-900/20">
-                      <TableCell className="font-medium text-white">{t.description}</TableCell>
-                      <TableCell>
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${
-                          t.type === 'receita' ? 'bg-emerald-950 text-emerald-400' : 'bg-red-950 text-red-400'
-                        }`}>
-                          {t.type === 'receita' ? 'Entrada' : 'Saída'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-zinc-400 text-xs">{t.category}</TableCell>
-                      <TableCell className="text-zinc-400 text-xs">{new Date(t.date).toLocaleDateString('pt-BR')}</TableCell>
-                      <TableCell className={`text-right font-semibold ${t.type === 'receita' ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {t.type === 'receita' ? '+' : '-'} {t.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                    <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800/60">
+                      <Button
+                        onClick={() => handleDeleteCollaborator(col.id)}
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs border-red-955 text-red-400 hover:bg-red-955/20 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1" /> Remover
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </div>
         )}

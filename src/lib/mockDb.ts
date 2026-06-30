@@ -170,5 +170,73 @@ export const mockDb = {
   saveServices: (services: string[]) => setStorageItem('db_services', services),
 
   getServiceGroups: (): ServiceGroup[] => getStorageItem('db_service_groups', INITIAL_SERVICE_GROUPS),
-  saveServiceGroups: (groups: ServiceGroup[]) => setStorageItem('db_service_groups', groups)
+  saveServiceGroups: (groups: ServiceGroup[]) => setStorageItem('db_service_groups', groups),
+
+  getProposals: (): Proposal[] => getStorageItem('db_proposals', INITIAL_PROPOSALS),
+  saveProposals: (proposals: Proposal[]) => setStorageItem('db_proposals', proposals),
+
+  getCollaborators: (): Collaborator[] => getStorageItem('db_collaborators', INITIAL_COLLABORATORS),
+  saveCollaborators: (collaborators: Collaborator[]) => setStorageItem('db_collaborators', collaborators)
 };
+
+export interface Collaborator {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface ProposalItem {
+  name: string;
+  quantity: number;
+  price: number;
+  collaboratorId?: string;
+}
+
+export interface Proposal {
+  id: string;
+  proposalNumber: string;
+  date: string;
+  validityDate: string;
+  clientName: string;
+  clientPhone: string;
+  clientEmail: string;
+  items: ProposalItem[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  observations: string;
+  createdAt: string;
+}
+
+const INITIAL_COLLABORATORS: Collaborator[] = [
+  { id: 'col_lucas', name: 'Lucas Santos', role: 'dev', company: 'achei', email: 'lucas.santos@achei.com.br' },
+  { id: 'col_keyla', name: 'Keyla', role: 'mkt', company: 'mid', email: 'keyla@mid.com.br' },
+  { id: 'col_haissa', name: 'Haissa', role: 'mkt', company: 'brit', email: 'haissa@brit.com.br' }
+];
+
+const INITIAL_PROPOSALS: Proposal[] = [
+  {
+    id: 'prop1',
+    proposalNumber: '2026066474',
+    date: '2026-06-29',
+    validityDate: '2026-07-02',
+    clientName: 'Priscila Queiroz',
+    clientPhone: '(11) 99549-6916',
+    clientEmail: 'evolutioadh@gmail.com',
+    items: [
+      { name: 'Comunicação Verbal', quantity: 1, price: 6000, collaboratorId: 'col_keyla' },
+      { name: 'Comunicação Visual', quantity: 1, price: 2500, collaboratorId: 'col_haissa' },
+      { name: 'Desenvolvimento de Landing Page Premium', quantity: 1, price: 2500, collaboratorId: 'col_lucas' }
+    ],
+    subtotal: 11000,
+    discount: 5500,
+    total: 5500,
+    observations: 'Forma de pagamento: Boleto ou Pix - MID (R$2000,00) / BRIT (R$1500,00) / ACHEI (R$1500,00)\nDesconto: R$ 5.500,00 - Fechando em conjunto\nObs.: Pagamento da MID é realizado em 3 meses\nPagamento BRIT é recorrente\nPagamento Achei no primeiro mês\n\nProjeção para 3 meses\nManutenção Site e criação de Blog R$600,00 mês\nTráfego Pago Google + Meta R$3500,00 mês (Negociável)',
+    createdAt: '2026-06-29T21:44:00.000Z'
+  }
+];
+
+
